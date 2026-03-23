@@ -52,3 +52,4 @@ android/.cxx/
 
 # Flutter auto-generated
 .flutter-plugins
+*.apk
