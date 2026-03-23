@@ -53,3 +53,7 @@ android/.cxx/
 # Flutter auto-generated
 .flutter-plugins
 *.apk
+
+# Firebase service account key (NUNCA commitear)
+scripts/service-account-key.json
+functions/node_modules/

@@ -59,6 +59,14 @@ class ApiService {
     return allMatches;
   }
 
+  static Future<MatchDetailData> fetchMatchDetail(int tournamentMatchId) async {
+    final uri = Uri.parse('$_base/matches/$tournamentMatchId');
+    final res = await http.get(uri);
+    if (res.statusCode != 200) throw Exception('Error ${res.statusCode}');
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+    return MatchDetailData.fromJson(data);
+  }
+
   static Future<List<Player>> fetchPlayers() async {
     final uri = Uri.parse(
       '$_base/team/$_teamId/inscription/$_inscriptionId/category/$_categoryId/player',

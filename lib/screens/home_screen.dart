@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../api/api_service.dart';
 import '../models/models.dart';
 import '../services/background_sync.dart';
 import '../services/debug_overrides.dart';
+import '../services/notifications.dart';
 import '../services/weather_service.dart';
+import '../widgets/team_logo.dart';
 import 'debug_screen.dart';
 import 'match_detail_screen.dart';
 
@@ -20,6 +23,23 @@ const _kRed    = Color(0xFFf85149);
 const _kYellow = Color(0xFFd29922);
 const _myInscriptionId = 2129;
 
+/// Cumpleaños del plantel — clave: apellido en mayúsculas, valor: (mes, día).
+const _birthdays = <String, (int, int)>{
+  'DEL BAO':    (1, 25),  // Camilo – 25 ene
+  'SASSANO':    (4, 5),   // Gian – 5 abr
+  'CERMELLI':   (4, 8),   // Noah – 8 abr
+  'VENEGAS':    (5, 17),  // Gio – 17 may
+  'MIGLIO':     (6, 25),  // Franco – 25 jun
+  'STAMBULSKY': (8, 24),  // Gonzalo/Pipi – 24 ago
+  'GAMON':      (8, 25),  // Uri – 25 ago
+  'FLEITAS':    (9, 20),  // Tatu – 20 sep
+};
+
+const _monthNames = [
+  '', 'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+  'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
+];
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -30,11 +50,13 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ClasificationEntry> _standings = [];
   List<Match> _matches = [];
   List<Player> _players = [];
+  Map<int, MatchDetailData> _matchDetails = {};
   bool _loading = true;
   String? _error;
   DateTime? _lastUpdate;
   Timer? _refreshTimer;
   WeatherInfo? _weather;
+  bool _showNotifBanner = false;
 
   @override
   void initState() {
@@ -44,6 +66,9 @@ class _HomeScreenState extends State<HomeScreen> {
       statusBarIconBrightness: Brightness.light,
     ));
     _loadAll();
+    if (kIsWeb && notifPermission != 'granted') {
+      setState(() => _showNotifBanner = true);
+    }
     // Auto-refresh cada 5 minutos mientras la app está en primer plano
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (_) => _loadAll());
   }
@@ -52,6 +77,15 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _enableNotifications() async {
+    await initNotifications();
+    await showNotification(
+      '🔔 Notificaciones activas',
+      'Te avisaremos cuando haya cambios en Estrella de Boedo',
+    );
+    if (mounted) setState(() => _showNotifBanner = false);
   }
 
   Future<void> _loadAll() async {
@@ -68,6 +102,16 @@ class _HomeScreenState extends State<HomeScreen> {
       // Verificar cambios con datos ya cargados (sin doble llamada a API)
       await checkForChanges(matches: matches, standings: standings, players: players);
 
+      // Fetch details for played matches (to get scorer/card data)
+      final played = matches.where((m) => m.hasResult && m.tournamentMatchId != 0).toList();
+      final details = await Future.wait(
+        played.map((m) => ApiService.fetchMatchDetail(m.tournamentMatchId)),
+      );
+      final detailMap = <int, MatchDetailData>{};
+      for (int i = 0; i < played.length; i++) {
+        detailMap[played[i].tournamentMatchId] = details[i];
+      }
+
       // Cargar clima ANTES de limpiar overrides
       final next = matches.firstWhere((m) => !_isPast(m), orElse: () => matches.last);
       final weatherDate = DebugOverrides.nextMatchDate ?? next.date;
@@ -80,12 +124,13 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       setState(() {
-        _standings  = standings;
-        _matches    = matches;
-        _players    = players;
-        _weather    = weather;
-        _loading    = false;
-        _lastUpdate = DateTime.now();
+        _standings    = standings;
+        _matches      = matches;
+        _players      = players;
+        _matchDetails = detailMap;
+        _weather      = weather;
+        _loading      = false;
+        _lastUpdate   = DateTime.now();
       });
     } catch (e) {
       setState(() { _loading = false; _error = e.toString(); });
@@ -100,6 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             _buildHeader(),
+            if (_showNotifBanner && kIsWeb) _buildNotifBanner(),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator(color: _kBlue))
@@ -124,8 +170,13 @@ class _HomeScreenState extends State<HomeScreen> {
         : '';
     return Container(
       color: _kSurface,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1148),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
         children: [
           const Text('⭐', style: TextStyle(fontSize: 20)),
           const SizedBox(width: 8),
@@ -135,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text('Estrella de Boedo',
                     style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                Text('Torneo Joma · Futsala BA',
+                Text('Torneo Joma · Futsala BA · v2.5',
                     style: TextStyle(color: _kMuted, fontSize: 11)),
               ],
             ),
@@ -143,21 +194,22 @@ class _HomeScreenState extends State<HomeScreen> {
           if (timeStr.isNotEmpty)
             Text('Act. $timeStr', style: const TextStyle(color: _kMuted, fontSize: 11)),
           const SizedBox(width: 4),
-          GestureDetector(
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const DebugScreen()))
-              .then((changed) async {
-                if (changed != true) return;
-                // Show fake data immediately, also fetch weather for debug date
-                WeatherInfo? w;
-                if (DebugOverrides.nextMatchDate != null) {
-                  w = await WeatherService.getForecast(
-                    DebugOverrides.nextMatchDate!, DebugOverrides.nextMatchTime);
-                }
-                if (mounted) setState(() { if (w != null) _weather = w; });
-              }),
-            child: const Icon(Icons.bug_report_outlined, color: _kMuted, size: 20)),
-          const SizedBox(width: 4),
+          if (!kReleaseMode)
+            GestureDetector(
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (_) => const DebugScreen()))
+                .then((changed) async {
+                  if (changed != true) return;
+                  WeatherInfo? w;
+                  if (DebugOverrides.nextMatchDate != null) {
+                    w = await WeatherService.getForecast(
+                      DebugOverrides.nextMatchDate!, DebugOverrides.nextMatchTime);
+                  }
+                  if (mounted) setState(() { if (w != null) _weather = w; });
+                }),
+              child: const Icon(Icons.bug_report_outlined, color: _kMuted, size: 20)),
+          if (!kReleaseMode)
+            const SizedBox(width: 4),
           _loading
               ? const SizedBox(width: 18, height: 18,
                   child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2))
@@ -166,21 +218,111 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: const Icon(Icons.refresh, color: _kMuted, size: 20)),
         ],
       ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNotifBanner() {
+    return Material(
+      color: const Color(0xFF1f3a6e),
+      child: InkWell(
+        onTap: _enableNotifications,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(Icons.notifications_outlined, color: _kBlue, size: 18),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text('Activar notificaciones de partidos y resultados',
+                  style: TextStyle(color: Colors.white, fontSize: 12)),
+              ),
+              const Icon(Icons.chevron_right, color: _kMuted, size: 18),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildBody() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 700) {
+          return _buildBodyDesktop();
+        }
+        return _buildBodyMobile();
+      },
+    );
+  }
+
+  Widget _buildBodyMobile() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+      cacheExtent: 2000,
       children: [
-        _buildNextMatch(),
+        RepaintBoundary(child: _buildNextMatch()),
         const SizedBox(height: 28),
-        _buildSection('Tabla de posiciones', _buildStandings()),
+        RepaintBoundary(child: _buildSection('Tabla de posiciones', _buildStandings())),
         const SizedBox(height: 28),
-        _buildSection('Fixture · Estrella de Boedo', _buildFixture()),
+        RepaintBoundary(child: _buildSection('Fixture · Estrella de Boedo', _buildFixture())),
         const SizedBox(height: 28),
-        _buildSection('Plantel', _buildPlayers()),
+        RepaintBoundary(child: _buildSection('Goleadores · Estrella de Boedo', _buildScorers())),
+        const SizedBox(height: 28),
+        RepaintBoundary(child: _buildSection('Plantel', _buildPlayers())),
       ],
+    );
+  }
+
+  Widget _buildBodyDesktop() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1100),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Columna izquierda: próximo partido + fixture
+                Expanded(
+                  flex: 55,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      RepaintBoundary(child: _buildNextMatch()),
+                      const SizedBox(height: 32),
+                      RepaintBoundary(child: _buildSection(
+                          'Fixture · Estrella de Boedo', _buildFixture())),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 24),
+                // Columna derecha: tabla + plantel
+                Expanded(
+                  flex: 45,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      RepaintBoundary(child: _buildSection(
+                          'Tabla de posiciones', _buildStandings())),
+                      const SizedBox(height: 32),
+                      RepaintBoundary(child: _buildSection(
+                          'Goleadores · Estrella de Boedo', _buildScorers())),
+                      const SizedBox(height: 32),
+                      RepaintBoundary(child: _buildSection('Plantel',
+                          _buildPlayersDesktop())),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -285,31 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _nmTeam(String name, bool isUs, {String? logoUrl}) {
     return Column(
       children: [
-        Container(
-          width: 56, height: 56,
-          decoration: BoxDecoration(
-            color: _kSurface2,
-            shape: BoxShape.circle,
-            border: Border.all(color: isUs ? _kBlue : _kBorder, width: isUs ? 2 : 1),
-          ),
-          child: ClipOval(
-            child: logoUrl != null
-                ? Image.network(
-                    logoUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
-                      child: Text(_initials(name),
-                        style: TextStyle(color: isUs ? _kBlue : _kMuted,
-                            fontWeight: FontWeight.bold, fontSize: 16)),
-                    ),
-                  )
-                : Center(
-                    child: Text(_initials(name),
-                      style: TextStyle(color: isUs ? _kBlue : _kMuted,
-                          fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-          ),
-        ),
+        TeamLogo(logoUrl: logoUrl, name: name, isUs: isUs, size: 56, fontSize: 16),
         const SizedBox(height: 8),
         Text(name,
           textAlign: TextAlign.center,
@@ -656,28 +774,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _fixLogo(String? logoUrl, String name, bool isUs) {
-    return Container(
-      width: 30, height: 30,
-      decoration: BoxDecoration(
-        color: _kSurface2,
-        shape: BoxShape.circle,
-        border: Border.all(color: isUs ? _kBlue : _kBorder, width: isUs ? 1.5 : 1),
-      ),
-      child: ClipOval(
-        child: logoUrl != null
-            ? Image.network(logoUrl, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Center(
-                  child: Text(_initials(name),
-                    style: TextStyle(color: isUs ? _kBlue : _kMuted,
-                        fontWeight: FontWeight.bold, fontSize: 10)),
-                ))
-            : Center(
-                child: Text(_initials(name),
-                  style: TextStyle(color: isUs ? _kBlue : _kMuted,
-                      fontWeight: FontWeight.bold, fontSize: 10)),
-              ),
-      ),
-    );
+    return TeamLogo(logoUrl: logoUrl, name: name, isUs: isUs, size: 30, fontSize: 10);
   }
 
   Widget _fixScoreBox(String val, bool highlight) {
@@ -694,67 +791,310 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── Plantel ────────────────────────────────────────────────────────────────
-  Widget _buildPlayers() {
-    if (_players.isEmpty) return _emptyCard('Sin jugadores cargados aún');
-    final extra = DebugOverrides.extraPlayer;
-    final count = _players.length + (extra != null ? 1 : 0);
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 3.2,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: count,
-      itemBuilder: (_, i) {
-        if (extra != null && i == count - 1) {
-          // Jugador extra del debug (último lugar)
-          return _playerCardRaw(extra, highlight: true);
+  // ── Goleadores ───────────────────────────────────────────────────────────
+  List<MapEntry<String, int>> _computeScorers() {
+    final scorers = <String, int>{};
+    for (final m in _matches.where((m) => m.hasResult)) {
+      final detail = _matchDetails[m.tournamentMatchId];
+      if (detail == null) continue;
+      final isHome = m.localInscriptionId == _myInscriptionId;
+      final goals = isHome ? detail.goalsHome : detail.goalsAway;
+      for (final g in goals) {
+        if (g.playerName.isNotEmpty) {
+          scorers[g.playerName] = (scorers[g.playerName] ?? 0) + g.goals;
         }
-        return _playerCard(_players[i],
-            nameOverride: i == 0 ? DebugOverrides.firstPlayerName : null);
-      },
-    );
+      }
+    }
+    final sorted = scorers.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted;
   }
 
-  Widget _playerCard(Player p, {String? nameOverride}) {
+  Widget _buildScorers() {
+    final scorers = _computeScorers();
+    if (scorers.isEmpty) return _emptyCard('Sin goles registrados aún');
     return Container(
       decoration: BoxDecoration(
         color: _kSurface,
         border: Border.all(color: _kBorder),
         borderRadius: BorderRadius.circular(10),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 36, height: 36,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [_kBlue, Color(0xFF7c3aed)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+      child: Column(
+        children: scorers.asMap().entries.map((e) {
+          final idx = e.key;
+          final scorer = e.value;
+          final isLast = idx == scorers.length - 1;
+          final isTop = idx == 0;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: isLast ? BorderSide.none : const BorderSide(color: _kBorder, width: 0.5),
               ),
             ),
-            child: Center(
-              child: Text(nameOverride != null ? _initials(nameOverride) : p.initials,
-                style: const TextStyle(color: Colors.white,
-                    fontWeight: FontWeight.bold, fontSize: 13)),
+            child: Row(
+              children: [
+                // Position
+                SizedBox(
+                  width: 24,
+                  child: Text(
+                    '${idx + 1}',
+                    style: TextStyle(
+                      color: isTop ? _kYellow : _kMuted,
+                      fontSize: 12,
+                      fontWeight: isTop ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                ),
+                // Goal icon
+                Icon(Icons.sports_soccer, size: 14,
+                    color: isTop ? _kYellow : _kMuted),
+                const SizedBox(width: 8),
+                // Player name
+                Expanded(
+                  child: Text(
+                    scorer.key,
+                    style: TextStyle(
+                      color: isTop ? Colors.white : _kMuted,
+                      fontSize: 12,
+                      fontWeight: isTop ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                // Goal count
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: isTop ? _kYellow.withOpacity(0.15) : _kSurface2,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${scorer.value}',
+                    style: TextStyle(
+                      color: isTop ? _kYellow : Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ── Plantel ────────────────────────────────────────────────────────────────
+
+  /// Busca el cumpleaños de un jugador por su apellido.
+  (int, int)? _playerBirthday(Player p) {
+    final ln = (p.lastName ?? '').toUpperCase().trim();
+    for (final entry in _birthdays.entries) {
+      if (ln.contains(entry.key) || entry.key.contains(ln)) {
+        return entry.value;
+      }
+    }
+    return null;
+  }
+
+  /// Próximo cumpleaños del plantel (o hoy).
+  (Player, int month, int day, bool isToday)? _nextBirthday() {
+    final now = DateTime.now();
+    (Player, int, int, int)? best; // player, month, day, daysUntil
+    for (final p in _players) {
+      final bd = _playerBirthday(p);
+      if (bd == null) continue;
+      final (m, d) = bd;
+      var next = DateTime(now.year, m, d);
+      if (next.isBefore(DateTime(now.year, now.month, now.day))) {
+        next = DateTime(now.year + 1, m, d);
+      }
+      final diff = next.difference(DateTime(now.year, now.month, now.day)).inDays;
+      if (best == null || diff < best.$4) {
+        best = (p, m, d, diff);
+      }
+    }
+    if (best == null) return null;
+    return (best.$1, best.$2, best.$3, best.$4 == 0);
+  }
+
+  Widget _buildPlayers() => _buildPlayersList(columns: 1);
+  Widget _buildPlayersDesktop() => _buildPlayersList(columns: 1);
+
+  Widget _buildPlayersList({required int columns}) {
+    if (_players.isEmpty) return _emptyCard('Sin jugadores cargados aún');
+
+    final nextBd = _nextBirthday();
+    final extra = DebugOverrides.extraPlayer;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: Border.all(color: _kBorder),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          // Próximo cumpleaños banner
+          if (nextBd != null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: nextBd.$4
+                    ? _kYellow.withOpacity(0.12)
+                    : _kSurface2,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+              ),
+              child: Row(
+                children: [
+                  Text(nextBd.$4 ? '🎂' : '🎈', style: const TextStyle(fontSize: 16)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(children: [
+                        TextSpan(
+                          text: nextBd.$4 ? '¡Hoy cumple! ' : 'Próximo cumple: ',
+                          style: TextStyle(
+                            color: nextBd.$4 ? _kYellow : _kMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextSpan(
+                          text: nextBd.$1.fullName,
+                          style: TextStyle(
+                            color: nextBd.$4 ? Colors.white : _kBlue,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        TextSpan(
+                          text: ' · ${nextBd.$3} ${_monthNames[nextBd.$2]}',
+                          style: const TextStyle(color: _kMuted, fontSize: 11),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (nextBd != null)
+            const Divider(height: 1, color: _kBorder),
+          // Player list
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              children: [
+                for (int i = 0; i < _players.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 6),
+                  _playerCard(
+                    _players[i],
+                    nameOverride: i == 0 ? DebugOverrides.firstPlayerName : null,
+                  ),
+                ],
+                if (extra != null) ...[
+                  const SizedBox(height: 6),
+                  _playerCardRaw(extra, highlight: true),
+                ],
+              ],
             ),
           ),
-          const SizedBox(width: 8),
+        ],
+      ),
+    );
+  }
+
+  /// DiceBear avatar URL — estilo "bottts" (robots, neutro).
+  String _avatarUrl(String name) {
+    final seed = Uri.encodeComponent(name.trim());
+    return 'https://api.dicebear.com/9.x/bottts-neutral/png?seed=$seed&size=80&backgroundColor=161b22';
+  }
+
+  Widget _playerCard(Player p, {String? nameOverride}) {
+    final bd = _playerBirthday(p);
+    final now = DateTime.now();
+    final isToday = bd != null && bd.$1 == now.month && bd.$2 == now.day;
+    final displayName = nameOverride ?? p.fullName;
+    final initials = nameOverride != null ? _initials(nameOverride) : p.initials;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isToday ? _kYellow.withOpacity(0.06) : Colors.transparent,
+        border: Border.all(color: isToday ? _kYellow.withOpacity(0.4) : _kBorder),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          // Avatar anime
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _kSurface2,
+              border: Border.all(
+                color: isToday ? _kYellow : _kBlue.withOpacity(0.4),
+                width: 2,
+              ),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Image.network(
+              _avatarUrl(displayName),
+              width: 48,
+              height: 48,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Center(
+                child: Text(initials,
+                  style: const TextStyle(
+                    color: _kBlue, fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Name
           Expanded(
-            child: Text(nameOverride ?? p.fullName,
-              style: const TextStyle(color: Colors.white,
-                  fontWeight: FontWeight.w600, fontSize: 11),
+            child: Text(
+              displayName,
+              style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
               overflow: TextOverflow.ellipsis,
               maxLines: 2,
             ),
           ),
+          // Birthday badge on the right
+          if (bd != null) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: isToday ? _kYellow.withOpacity(0.15) : _kSurface2,
+                borderRadius: BorderRadius.circular(12),
+                border: isToday ? Border.all(color: _kYellow.withOpacity(0.4)) : null,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isToday ? Icons.cake : Icons.cake_outlined,
+                    size: 13,
+                    color: isToday ? _kYellow : _kMuted,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${bd.$2} ${_monthNames[bd.$1]}',
+                    style: TextStyle(
+                      color: isToday ? _kYellow : _kMuted,
+                      fontSize: 11,
+                      fontWeight: isToday ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -764,7 +1104,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final color = highlight ? _kYellow : _kBlue;
     return Container(
       decoration: BoxDecoration(
-        color: _kSurface,
+        color: Colors.transparent,
         border: Border.all(color: highlight ? _kYellow.withOpacity(0.5) : _kBorder),
         borderRadius: BorderRadius.circular(10),
       ),
@@ -772,19 +1112,25 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Container(
-            width: 36, height: 36,
+            width: 40, height: 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: color.withOpacity(0.15),
-              border: Border.all(color: color.withOpacity(0.5)),
+              color: _kSurface2,
+              border: Border.all(color: color.withOpacity(0.5), width: 2),
             ),
-            child: Center(
-              child: Text(_initials(name),
-                style: TextStyle(color: color,
-                    fontWeight: FontWeight.bold, fontSize: 13)),
+            clipBehavior: Clip.antiAlias,
+            child: Image.network(
+              _avatarUrl(name),
+              width: 40, height: 40,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Center(
+                child: Text(_initials(name),
+                  style: TextStyle(color: color,
+                      fontWeight: FontWeight.bold, fontSize: 13)),
+              ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(name,
               style: TextStyle(color: highlight ? _kYellow : Colors.white,
@@ -810,7 +1156,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 16),
             const Text('No se pudo cargar', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
-            Text(_error!, style: const TextStyle(color: _kMuted, fontSize: 12), textAlign: TextAlign.center),
+            const Text('No se pudo cargar los datos. Verificá tu conexión e intentá de nuevo.', style: TextStyle(color: _kMuted, fontSize: 12), textAlign: TextAlign.center),
             const SizedBox(height: 24),
             ElevatedButton.icon(
               onPressed: _loadAll,

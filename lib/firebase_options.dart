@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart'
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
-    if (kIsWeb) throw UnsupportedError('Web no soportado');
+    if (kIsWeb) return web;
     switch (defaultTargetPlatform) {
       case TargetPlatform.android:
         return android;
@@ -16,6 +16,16 @@ class DefaultFirebaseOptions {
             'Plataforma no soportada: $defaultTargetPlatform');
     }
   }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyCnCLB7glTXLw_xvAD30oayZflG_gnDTEk',
+    appId: '1:259850372896:web:12c891d2eb82e1b097f945',
+    messagingSenderId: '259850372896',
+    projectId: 'edb-estrella',
+    storageBucket: 'edb-estrella.firebasestorage.app',
+    authDomain: 'edb-estrella.firebaseapp.com',
+    measurementId: 'G-Y5F9MG8BH7',
+  );
 
   // Valores del proyecto edb-estrella
   // (extraídos del google-services.json)

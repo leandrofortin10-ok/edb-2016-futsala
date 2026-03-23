@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
+import 'services/auth_service.dart';
 import 'services/notifications.dart';
 import 'services/background_sync.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await AuthService.initialize();
   await initNotifications();
   await seedTestStateOnce();
   await initBackgroundSync();
@@ -29,7 +33,21 @@ class EstrellaApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              backgroundColor: Color(0xFF0d1117),
+              body: Center(
+                child: CircularProgressIndicator(color: Color(0xFF388bfd)),
+              ),
+            );
+          }
+          if (snapshot.data == null) return const LoginScreen();
+          return const HomeScreen();
+        },
+      ),
     );
   }
 }

@@ -1,0 +1,16 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // match_media: lectura pública, escritura solo para usuarios autenticados
+    match /match_media/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Todo lo demás: denegado por defecto
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
