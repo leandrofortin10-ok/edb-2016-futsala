@@ -80,30 +80,21 @@ Future<void> _checkForChanges({
         ? (m.visitorName ?? '?')
         : (m.localName ?? '?');
 
-    // Nombre del rival cambió
-    if (prev.rivalName != null && prev.rivalName != rival) {
+    final rivalChanged   = prev.rivalName != null && prev.rivalName != rival;
+    final scoreChanged   = m.hasResult &&
+        (!prev.hasResult ||
+         prev.scoreLocal != m.scoreLocal ||
+         prev.scoreVisitor != m.scoreVisitor);
+    final dateTimeChanged = prev.date != m.date || prev.time != m.time;
+
+    // Prioridad: rival > resultado > fecha/hora
+    // Solo se notifica el cambio más importante por partido por ciclo.
+    if (rivalChanged) {
       await showNotification(
         '📋 Rival actualizado · ${m.fechaLabel ?? ''}',
         'Estrella vs $rival (antes: ${prev.rivalName})',
       );
-    }
-
-    // Fecha u hora cambió (cualquier dirección)
-    if (prev.date != m.date || prev.time != m.time) {
-      final newDateTime = m.date != null
-          ? '${_fmt(m.date!)}${m.time != null ? ' ${m.time}' : ''}'
-          : 'a confirmar';
-      await showNotification(
-        '📅 Horario actualizado · ${m.fechaLabel ?? ''}',
-        'Estrella vs $rival — $newDateTime',
-      );
-    }
-
-    // Resultado apareció o cambió
-    if (m.hasResult &&
-        (!prev.hasResult ||
-         prev.scoreLocal != m.scoreLocal ||
-         prev.scoreVisitor != m.scoreVisitor)) {
+    } else if (scoreChanged) {
       final isHome = m.localInscriptionId == _myInscriptionId;
       final us   = isHome ? m.scoreLocal! : m.scoreVisitor!;
       final them = isHome ? m.scoreVisitor! : m.scoreLocal!;
@@ -111,6 +102,14 @@ Future<void> _checkForChanges({
       await showNotification(
         '⚽ $result ${m.fechaLabel ?? ''}',
         'Estrella $us – $them $rival',
+      );
+    } else if (dateTimeChanged) {
+      final newDateTime = m.date != null
+          ? '${_fmt(m.date!)}${m.time != null ? ' ${m.time}' : ''}'
+          : 'a confirmar';
+      await showNotification(
+        '📅 Horario actualizado · ${m.fechaLabel ?? ''}',
+        'Estrella vs $rival — $newDateTime',
       );
     }
   }

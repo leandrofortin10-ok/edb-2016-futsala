@@ -4,6 +4,36 @@ Los APKs se guardan en `releases/` con el nombre `edb-cat2016-vX.Y.Z.apk`.
 
 ---
 
+## v1.4.0 — 2026-03-19
+
+**APK:** `releases/edb-cat2016-v1.4.0.apk`
+
+### Cambios
+- Fix de notificaciones duplicadas: cuando cambiaban múltiples cosas de un mismo partido en el mismo ciclo (rival + fecha, resultado + fecha, etc.) se enviaban varias notificaciones. Ahora se aplica prioridad: rival > resultado > fecha/hora, una sola notificación por partido por ciclo
+
+---
+
+## v1.3.0 — 2026-03-19
+
+**APK:** `releases/edb-cat2016-v1.3.0.apk`
+
+### Cambios
+- Fix: las fechas y horarios de los partidos ahora se leen correctamente desde la nueva estructura de la API (el campo `dateTime` se movió a `tournamentMatches[].matchInfo.dateTime`)
+- Fix: parseo defensivo de todos los campos numéricos — si la API devuelve un String donde se espera un int, la app lo convierte sin crashear
+
+---
+
+## v1.2.0 — 2026-03-17
+
+**APK:** `releases/edb-cat2016-v1.2.0.apk`
+
+### Cambios
+- Fixture rediseñado: escudos de ambos equipos en cada fila
+- Nombres de equipos en fuente más chica (evita cortes) con soporte de 2 líneas
+- Fixture muestra fecha y hora del partido (antes solo fecha)
+
+---
+
 ## v1.1.0 — 2026-03-17
 
 **APK:** `releases/edb-cat2016-v1.1.0.apk`

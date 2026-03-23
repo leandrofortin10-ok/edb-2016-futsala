@@ -1,3 +1,13 @@
+int? _parseInt(dynamic v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  if (v is double) return v.toInt();
+  if (v is String) return int.tryParse(v);
+  return null;
+}
+
+int _parseIntOrZero(dynamic v) => _parseInt(v) ?? 0;
+
 class ClasificationEntry {
   final int? inscriptionId;
   final String? inscriptionName;
@@ -22,17 +32,17 @@ class ClasificationEntry {
   factory ClasificationEntry.fromJson(Map<String, dynamic> j) {
     final ci = (j['club'] as Map?)?['clubInscription'] as Map? ?? {};
     return ClasificationEntry(
-      inscriptionId:   ci['id'] as int?,
+      inscriptionId:   _parseInt(ci['id']),
       inscriptionName: ci['tableName'] as String? ?? ci['name'] as String?,
       logo:            ci['logo'] as String?,
-      pts: j['pts'] as int? ?? 0,
-      pj:  j['pj']  as int? ?? 0,
-      pg:  j['pg']  as int? ?? 0,
-      pe:  j['pe']  as int? ?? 0,
-      pp:  j['pp']  as int? ?? 0,
-      gf:  j['gf']  as int? ?? 0,
-      gc:  j['gc']  as int? ?? 0,
-      dg:  j['dg']  as int? ?? 0,
+      pts: _parseIntOrZero(j['pts']),
+      pj:  _parseIntOrZero(j['pj']),
+      pg:  _parseIntOrZero(j['pg']),
+      pe:  _parseIntOrZero(j['pe']),
+      pp:  _parseIntOrZero(j['pp']),
+      gf:  _parseIntOrZero(j['gf']),
+      gc:  _parseIntOrZero(j['gc']),
+      dg:  _parseIntOrZero(j['dg']),
     );
   }
 }
@@ -75,27 +85,46 @@ class Match {
     final awayVac = j['vacancyAway'] as Map?;
 
     String? date, time;
-    final dtStr = j['dateTime'] as String?;
+    // tm[0] es siempre vacío en esta API. Los datos reales están en tm[1]+.
+    // Buscamos el primer tournamentMatch con datos reales.
+    Map? tmReal;
+    final tmList = j['tournamentMatches'];
+    if (tmList is List) {
+      for (final t in tmList) {
+        final mi = (t as Map?)?['matchInfo'] as Map?;
+        if (mi?['dateTime'] != null || t?['scoreHome'] != null) {
+          tmReal = t as Map?;
+          break;
+        }
+      }
+    }
+
+    String? dtStr = j['dateTime'] as String?;
+    if (dtStr == null) {
+      dtStr = tmReal?['matchInfo']?['dateTime'] as String?;
+    }
     if (dtStr != null) {
-      final dt = DateTime.tryParse(dtStr)?.toLocal();
+      // Format may be "2026-03-22 10:00" (local) or ISO — handle both
+      final dt = DateTime.tryParse(dtStr) ?? DateTime.tryParse(dtStr.replaceFirst(' ', 'T'));
       if (dt != null) {
-        date = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
-        time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+        final local = dtStr.contains('T') ? dt.toLocal() : dt;
+        date = '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+        time = '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
       }
     }
 
     return Match(
-      id:                    j['id'] as int? ?? 0,
+      id:                    _parseIntOrZero(j['id']),
       date:                  date,
       time:                  time,
       localName:             homeCi?['tableName'] as String? ?? homeVac?['name'] as String?,
       visitorName:           awayCi?['tableName'] as String? ?? awayVac?['name'] as String?,
       localLogo:             homeCi?['logo'] as String?,
       visitorLogo:           awayCi?['logo'] as String?,
-      localInscriptionId:    homeCi?['id'] as int?,
-      visitorInscriptionId:  awayCi?['id'] as int?,
-      scoreLocal:            j['valueScoreHome'] as int?,
-      scoreVisitor:          j['valueScoreAway'] as int?,
+      localInscriptionId:    _parseInt(homeCi?['id']),
+      visitorInscriptionId:  _parseInt(awayCi?['id']),
+      scoreLocal:            _parseInt(j['valueScoreHome']) ?? _parseInt(tmReal?['scoreHome']),
+      scoreVisitor:          _parseInt(j['valueScoreAway']) ?? _parseInt(tmReal?['scoreAway']),
       fechaLabel:            fechaLabel,
     );
   }

@@ -7,6 +7,7 @@ import '../services/background_sync.dart';
 import '../services/debug_overrides.dart';
 import '../services/weather_service.dart';
 import 'debug_screen.dart';
+import 'match_detail_screen.dart';
 
 const _kBlue   = Color(0xFF388bfd);
 const _kBg     = Color(0xFF0d1117);
@@ -68,7 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
       await checkForChanges(matches: matches, standings: standings, players: players);
 
       // Cargar clima ANTES de limpiar overrides
-      final next = matches.firstWhere((m) => !m.hasResult, orElse: () => matches.last);
+      final next = matches.firstWhere((m) => !_isPast(m), orElse: () => matches.last);
       final weatherDate = DebugOverrides.nextMatchDate ?? next.date;
       final weatherTime = DebugOverrides.nextMatchDate != null
           ? DebugOverrides.nextMatchTime : next.time;
@@ -202,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_matches.isEmpty) {
       return _emptyCard('Sin partidos encontrados');
     }
-    final next = _matches.firstWhere((m) => !m.hasResult, orElse: () => _matches.last);
+    final next = _matches.firstWhere((m) => !_isPast(m), orElse: () => _matches.last);
     final isHome = next.localInscriptionId == _myInscriptionId;
     final played = next.hasResult;
     // Apply debug overrides for date/time
@@ -515,6 +516,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _fixtureRow(Match m, {String? rivalOverride}) {
     final isHome = m.localInscriptionId == _myInscriptionId;
     final played = m.hasResult;
+    final pastNoResult = !played && _isPast(m); // jugado pero sin resultado en API
     final us    = isHome ? m.scoreLocal  : m.scoreVisitor;
     final them  = isHome ? m.scoreVisitor : m.scoreLocal;
 
@@ -523,12 +525,21 @@ class _HomeScreenState extends State<HomeScreen> {
       if (us > them) resultColor = _kGreen;
       else if (us < them) resultColor = _kRed;
       else resultColor = _kYellow;
+    } else if (pastNoResult) {
+      resultColor = _kMuted; // gris: jugado sin resultado cargado
     }
 
     final localName = (!isHome && rivalOverride != null) ? rivalOverride : (m.localName ?? '—');
     final visitorName = (isHome && rivalOverride != null) ? rivalOverride : (m.visitorName ?? '—');
 
-    return Container(
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => MatchDetailScreen(match: m),
+        ),
+      ),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: _kSurface,
@@ -588,25 +599,31 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           _fixScoreBox('${m.scoreVisitor}', !isHome && them! > us!),
                         ])
-                      : Column(mainAxisSize: MainAxisSize.min, children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: _kBorder),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text('vs', style: TextStyle(color: _kMuted, fontSize: 10)),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            m.date != null ? _formatDate(m.date!, m.time) : 'A confirmar',
-                            style: TextStyle(
-                              color: m.date != null ? _kMuted : _kYellow,
-                              fontSize: 9,
-                              fontStyle: m.date != null ? FontStyle.normal : FontStyle.italic,
-                            ),
-                          ),
-                        ]),
+                      : pastNoResult
+                          ? Column(mainAxisSize: MainAxisSize.min, children: [
+                              Text('?–?', style: TextStyle(color: _kMuted, fontSize: 13, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 2),
+                              Text('sin resultado', style: TextStyle(color: _kMuted, fontSize: 8, fontStyle: FontStyle.italic)),
+                            ])
+                          : Column(mainAxisSize: MainAxisSize.min, children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  border: Border.all(color: _kBorder),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text('vs', style: TextStyle(color: _kMuted, fontSize: 10)),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                m.date != null ? _formatDate(m.date!, m.time) : 'A confirmar',
+                                style: TextStyle(
+                                  color: m.date != null ? _kMuted : _kYellow,
+                                  fontSize: 9,
+                                  fontStyle: m.date != null ? FontStyle.normal : FontStyle.italic,
+                                ),
+                              ),
+                            ]),
                 ),
                 // Visitante
                 Expanded(
@@ -634,6 +651,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -816,6 +834,16 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: Center(child: Text(msg, style: const TextStyle(color: _kMuted, fontSize: 13))),
     );
+  }
+
+  // Un partido es "pasado" si tiene resultado cargado, O si su fecha ya ocurrió
+  bool _isPast(Match m) {
+    if (m.hasResult) return true;
+    if (m.date == null) return false;
+    final d = DateTime.tryParse(m.date!);
+    if (d == null) return false;
+    final today = DateTime.now();
+    return d.isBefore(DateTime(today.year, today.month, today.day));
   }
 
   String _initials(String name) {

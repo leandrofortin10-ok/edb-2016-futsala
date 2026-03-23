@@ -30,6 +30,9 @@ class ApiService {
   }
 
   // Response: {children:[{value:"Fecha N", matchesPlanning:[...]}]}
+  // NOTA: cada match tiene tournamentMatches[4]. tm[0] siempre es vacío.
+  // Los datos reales (score, fecha) están en tm[1] (el partido oficial que
+  // cuenta para la tabla). tm[2] y tm[3] son sub-partidos del mismo fixture.
   static Future<List<Match>> fetchMatches() async {
     final uri = Uri.parse(
       '$_base/tournament/$_tournamentId/phase/$_phaseId/visualizer'

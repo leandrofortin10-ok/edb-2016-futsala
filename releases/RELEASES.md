@@ -4,6 +4,52 @@ Los APKs se guardan en `releases/` con el nombre `edb-cat2016-vX.Y.Z.apk`.
 
 ---
 
+## v1.6.0 — 2026-03-22
+
+**APK:** `releases/edb-cat2016-v1.6.0.apk`
+
+### Cambios
+- Fix crítico: resultados y fechas de partidos ahora se leen correctamente desde la API
+- La API usa `tournamentMatches[1]` como el partido oficial (el `[0]` siempre es vacío)
+- Fix: "Próximo partido" salta al siguiente cuando la fecha ya pasó, aunque el resultado no esté cargado en la API todavía
+- Fix: en el fixture, partidos con fecha pasada sin resultado muestran "?–?" en lugar de "vs"
+
+---
+
+## v1.5.0 — 2026-03-22
+
+**APK:** `releases/edb-cat2016-v1.5.0.apk`
+
+### Cambios
+- Nueva feature: galería de fotos y videos por partido
+- Al tocar cualquier partido en el fixture se abre la pantalla de detalle con las fotos/videos
+- Acceso admin con email/contraseña (ícono 🛡️) para subir y borrar contenido
+- Soporte para fotos desde cámara o galería, videos hasta 5 minutos
+- Viewer fullscreen con zoom en fotos y reproductor de video
+- Fix: "Próximo partido" ahora considera la fecha además del resultado — si la fecha ya pasó, el partido se trata como jugado aunque la API no haya cargado el resultado todavía
+- Fix: En el fixture, los partidos cuya fecha pasó sin resultado cargado muestran "?–?" en lugar de "vs"
+
+---
+
+## v1.4.0 — 2026-03-19
+
+**APK:** `releases/edb-cat2016-v1.4.0.apk`
+
+### Cambios
+- Fix de notificaciones duplicadas: cuando cambiaban múltiples cosas de un mismo partido en el mismo ciclo (rival + fecha, resultado + fecha, etc.) se enviaban varias notificaciones. Ahora se aplica prioridad: rival > resultado > fecha/hora, una sola notificación por partido por ciclo
+
+---
+
+## v1.3.0 — 2026-03-19
+
+**APK:** `releases/edb-cat2016-v1.3.0.apk`
+
+### Cambios
+- Fix: las fechas y horarios de los partidos ahora se leen correctamente desde la nueva estructura de la API (el campo `dateTime` se movió a `tournamentMatches[].matchInfo.dateTime`)
+- Fix: parseo defensivo de todos los campos numéricos — si la API devuelve un String donde se espera un int, la app lo convierte sin crashear
+
+---
+
 ## v1.2.0 — 2026-03-17
 
 **APK:** `releases/edb-cat2016-v1.2.0.apk`
