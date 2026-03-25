@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_service.dart';
 import '../models/models.dart';
+import '../utils/birthdays.dart';
 import 'notifications.dart';
 
 const _myInscriptionId = 2129;
@@ -24,6 +25,8 @@ Future<void> resetSavedState() async {
   await prefs.remove('last_matches');
   await prefs.remove('last_position');
   await prefs.remove('last_players');
+  await prefs.remove('last_birthdays');
+  await prefs.remove('last_birthday_check');
   await prefs.remove('test_state_seeded');
 }
 
@@ -142,6 +145,54 @@ Future<void> _checkForChanges({
   }
 
   await prefs.setString('last_players', jsonEncode(newNames.toList()));
+
+  // ── Cumpleaños: cambio de fecha ────────────────────────────────────────────
+  final currentBdMap = birthdays.map((k, v) => MapEntry(k, '${v.$1}-${v.$2}'));
+  final savedBdJson  = prefs.getString('last_birthdays');
+  if (savedBdJson != null) {
+    final savedBdMap = (jsonDecode(savedBdJson) as Map<String, dynamic>)
+        .map((k, v) => MapEntry(k, v as String));
+    for (final entry in currentBdMap.entries) {
+      final prev = savedBdMap[entry.key];
+      if (prev != null && prev != entry.value) {
+        final name = _nameForBirthdayKey(entry.key, players);
+        final parts = entry.value.split('-');
+        final m = int.tryParse(parts[0]) ?? 0;
+        final d = int.tryParse(parts[1]) ?? 0;
+        await showNotification(
+          '🎂 Cumpleaños actualizado: $name',
+          'Nueva fecha: $d de ${bdMonthNames[m]}',
+        );
+        // Forzar re-chequeo del día exacto por si la nueva fecha es hoy
+        await prefs.remove('last_birthday_check');
+      }
+    }
+  }
+  await prefs.setString('last_birthdays', jsonEncode(currentBdMap));
+
+  // ── Cumpleaños: día exacto ──────────────────────────────────────────────────
+  final today = DateTime.now();
+  final todayKey = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+  if (prefs.getString('last_birthday_check') != todayKey) {
+    for (final p in players) {
+      final bd = birthdayForLastName(p.lastName ?? '');
+      if (bd != null && bd.$1 == today.month && bd.$2 == today.day) {
+        await showNotification(
+          '🎂 Cumpleaños hoy: ${p.fullName}',
+          '¡Feliz cumple desde el equipo!',
+        );
+      }
+    }
+    await prefs.setString('last_birthday_check', todayKey);
+  }
+}
+
+String _nameForBirthdayKey(String key, List<Player> players) {
+  for (final p in players) {
+    final ln = (p.lastName ?? '').toUpperCase().trim();
+    if (ln.contains(key) || key.contains(ln)) return p.fullName;
+  }
+  return key;
 }
 
 String _fmt(String date) {

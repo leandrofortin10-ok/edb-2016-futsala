@@ -8,6 +8,7 @@ import '../services/background_sync.dart';
 import '../services/debug_overrides.dart';
 import '../services/notifications.dart';
 import '../services/weather_service.dart';
+import '../utils/birthdays.dart';
 import '../widgets/team_logo.dart';
 import 'debug_screen.dart';
 import 'match_detail_screen.dart';
@@ -23,17 +24,6 @@ const _kRed    = Color(0xFFf85149);
 const _kYellow = Color(0xFFd29922);
 const _myInscriptionId = 2129;
 
-/// Cumpleaños del plantel — clave: apellido en mayúsculas, valor: (mes, día).
-const _birthdays = <String, (int, int)>{
-  'DEL BAO':    (1, 25),  // Camilo – 25 ene
-  'SASSANO':    (4, 5),   // Gian – 5 abr
-  'CERMELLI':   (4, 8),   // Noah – 8 abr
-  'VENEGAS':    (5, 17),  // Gio – 17 may
-  'MIGLIO':     (6, 25),  // Franco – 25 jun
-  'STAMBULSKY': (8, 24),  // Gonzalo/Pipi – 24 ago
-  'GAMON':      (8, 25),  // Uri – 25 ago
-  'FLEITAS':    (9, 20),  // Tatu – 20 sep
-};
 
 const _monthNames = [
   '', 'ene', 'feb', 'mar', 'abr', 'may', 'jun',
@@ -889,15 +879,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Plantel ────────────────────────────────────────────────────────────────
 
   /// Busca el cumpleaños de un jugador por su apellido.
-  (int, int)? _playerBirthday(Player p) {
-    final ln = (p.lastName ?? '').toUpperCase().trim();
-    for (final entry in _birthdays.entries) {
-      if (ln.contains(entry.key) || entry.key.contains(ln)) {
-        return entry.value;
-      }
-    }
-    return null;
-  }
+  (int, int)? _playerBirthday(Player p) => birthdayForLastName(p.lastName ?? '');
 
   /// Próximo cumpleaños del plantel (o hoy).
   (Player, int month, int day, bool isToday)? _nextBirthday() {
