@@ -1,4 +1,6 @@
 import 'dart:async';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -155,35 +157,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildHeader() {
-    final timeStr = _lastUpdate != null
-        ? '${_lastUpdate!.hour.toString().padLeft(2,'0')}:${_lastUpdate!.minute.toString().padLeft(2,'0')}'
-        : '';
     return Container(
       color: _kSurface,
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1148),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
         children: [
-          const Text('⭐', style: TextStyle(fontSize: 20)),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Estrella de Boedo',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
-                Text('Torneo Joma · Futsala BA · v2.5',
-                    style: TextStyle(color: _kMuted, fontSize: 11)),
-              ],
-            ),
-          ),
-          if (timeStr.isNotEmpty)
-            Text('Act. $timeStr', style: const TextStyle(color: _kMuted, fontSize: 11)),
-          const SizedBox(width: 4),
           if (!kReleaseMode)
             GestureDetector(
               onTap: () => Navigator.push(context,
@@ -197,18 +175,62 @@ class _HomeScreenState extends State<HomeScreen> {
                   }
                   if (mounted) setState(() { if (w != null) _weather = w; });
                 }),
-              child: const Icon(Icons.bug_report_outlined, color: _kMuted, size: 20)),
-          if (!kReleaseMode)
-            const SizedBox(width: 4),
-          _loading
-              ? const SizedBox(width: 18, height: 18,
-                  child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2))
-              : GestureDetector(
-                  onTap: _loadAll,
-                  child: const Icon(Icons.refresh, color: _kMuted, size: 20)),
+              child: const Icon(Icons.bug_report_outlined, color: _kMuted, size: 18)),
+          const Spacer(),
+          if (_loading)
+            const SizedBox(width: 16, height: 16,
+              child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2)),
         ],
       ),
-          ),
+    );
+  }
+
+  Widget _buildBannerImage() {
+    return Center(
+      child: SizedBox(
+        width: 240,
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.asset(
+                'assets/bandera_categoria.jpeg',
+                width: 240,
+                fit: BoxFit.contain,
+              ),
+            ),
+            // Bordes difuminados con gradientes simples (mucho más liviano que ShaderMask)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [_kBg, Colors.transparent, Colors.transparent, _kBg],
+                      stops: const [0.0, 0.08, 0.92, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [_kBg, Colors.transparent, Colors.transparent, _kBg],
+                      stops: const [0.0, 0.08, 0.92, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -250,10 +272,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBodyMobile() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
       cacheExtent: 2000,
       children: [
+        _buildBannerImage(),
+        const SizedBox(height: 16),
         RepaintBoundary(child: _buildNextMatch()),
+        const SizedBox(height: 12),
+        RepaintBoundary(child: _buildQuickStats()),
         const SizedBox(height: 28),
         RepaintBoundary(child: _buildSection('Tabla de posiciones', _buildStandings())),
         const SizedBox(height: 28),
@@ -277,13 +303,17 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Columna izquierda: próximo partido + fixture
+                // Columna izquierda: bandera + próximo partido + fixture
                 Expanded(
                   flex: 55,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      _buildBannerImage(),
+                      const SizedBox(height: 20),
                       RepaintBoundary(child: _buildNextMatch()),
+                      const SizedBox(height: 12),
+                      RepaintBoundary(child: _buildQuickStats()),
                       const SizedBox(height: 32),
                       RepaintBoundary(child: _buildSection(
                           'Fixture · Estrella de Boedo', _buildFixture())),
@@ -412,6 +442,312 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  // ── Quick Stats (racha + countdown + stats + compartir) ────────────────────
+  Widget _buildQuickStats() {
+    if (_matches.isEmpty || _standings.isEmpty) return const SizedBox.shrink();
+
+    final us = _standings.cast<ClasificationEntry?>().firstWhere(
+        (e) => e!.inscriptionId == _myInscriptionId, orElse: () => null);
+
+    return Column(
+      children: [
+        // Row 1: Racha + Countdown
+        Row(
+          children: [
+            Expanded(child: _buildStreak()),
+            const SizedBox(width: 8),
+            Expanded(child: _buildCountdown()),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Row 2: Stats rápidas
+        if (us != null) _buildStatsRow(us),
+        const SizedBox(height: 8),
+        // Row 3: Compartir por WhatsApp
+        _buildShareButton(),
+      ],
+    );
+  }
+
+  /// Calcula la racha actual: victorias/empates/derrotas consecutivas.
+  Widget _buildStreak() {
+    final played = _matches.where((m) => m.hasResult).toList();
+    if (played.isEmpty) return const SizedBox.shrink();
+
+    // Construir lista de resultados de más reciente a más antiguo
+    final results = <String>[];
+    for (final m in played.reversed) {
+      final isHome = m.localInscriptionId == _myInscriptionId;
+      final us   = isHome ? m.scoreLocal! : m.scoreVisitor!;
+      final them = isHome ? m.scoreVisitor! : m.scoreLocal!;
+      if (us > them) results.add('W');
+      else if (us < them) results.add('L');
+      else results.add('D');
+    }
+
+    // Contar racha actual
+    final current = results.first;
+    int count = 0;
+    for (final r in results) {
+      if (r == current) count++;
+      else break;
+    }
+
+    final Color streakColor;
+    final String streakLabel;
+    final IconData streakIcon;
+    switch (current) {
+      case 'W':
+        streakColor = _kGreen;
+        streakLabel = count == 1 ? '1 victoria' : '$count victorias';
+        streakIcon = Icons.local_fire_department;
+        break;
+      case 'L':
+        streakColor = _kRed;
+        streakLabel = count == 1 ? '1 derrota' : '$count derrotas';
+        streakIcon = Icons.trending_down;
+        break;
+      default:
+        streakColor = _kYellow;
+        streakLabel = count == 1 ? '1 empate' : '$count empates';
+        streakIcon = Icons.trending_flat;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: Border.all(color: streakColor.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          Icon(streakIcon, color: streakColor, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('RACHA', style: TextStyle(
+                    color: _kMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1)),
+                const SizedBox(height: 2),
+                Text(streakLabel, style: TextStyle(
+                    color: streakColor, fontSize: 13, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+          // Últimos 5 resultados
+          Row(
+            children: results.take(5).map((r) {
+              final c = r == 'W' ? _kGreen : r == 'L' ? _kRed : _kYellow;
+              return Container(
+                width: 8, height: 8,
+                margin: const EdgeInsets.only(left: 3),
+                decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Countdown al próximo partido.
+  Widget _buildCountdown() {
+    final next = _matches.cast<Match?>().firstWhere(
+        (m) => !_isPast(m!), orElse: () => null);
+    if (next == null || next.date == null) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _kSurface,
+          border: Border.all(color: _kBorder),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.schedule, color: _kMuted, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('DÍAS PARA EL PRÓXIMO PARTIDO', style: TextStyle(
+                      color: _kMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1)),
+                  const SizedBox(height: 2),
+                  Text('A confirmar', style: TextStyle(
+                      color: _kYellow, fontSize: 12, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final matchDate = DateTime.tryParse(next.date!);
+    if (matchDate == null) return const SizedBox.shrink();
+
+    DateTime matchDateTime = matchDate;
+    if (next.time != null) {
+      final parts = next.time!.split(':');
+      if (parts.length == 2) {
+        matchDateTime = DateTime(matchDate.year, matchDate.month, matchDate.day,
+            int.tryParse(parts[0]) ?? 0, int.tryParse(parts[1]) ?? 0);
+      }
+    }
+
+    final diff = matchDateTime.difference(DateTime.now());
+    final String countdownText;
+    if (diff.isNegative) {
+      countdownText = 'En curso / Jugado';
+    } else if (diff.inDays > 0) {
+      countdownText = 'Faltan ${diff.inDays}d ${diff.inHours % 24}h';
+    } else if (diff.inHours > 0) {
+      countdownText = 'Faltan ${diff.inHours}h ${diff.inMinutes % 60}m';
+    } else {
+      countdownText = 'Faltan ${diff.inMinutes}m';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: Border.all(color: _kBlue.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.timer_outlined, color: _kBlue, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('DÍAS PARA EL PRÓXIMO PARTIDO', style: TextStyle(
+                    color: _kMuted, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 1)),
+                const SizedBox(height: 2),
+                Text(countdownText, style: const TextStyle(
+                    color: _kBlue, fontSize: 13, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Stats rápidas del equipo.
+  Widget _buildStatsRow(ClasificationEntry us) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: Border.all(color: _kBorder),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _statItem('PJ', '${us.pj}', Colors.white),
+          _statItem('PG', '${us.pg}', _kGreen),
+          _statItem('PE', '${us.pe}', _kYellow),
+          _statItem('PP', '${us.pp}', _kRed),
+          _statItem('GF', '${us.gf}', _kGreen),
+          _statItem('GC', '${us.gc}', _kRed),
+          _statItem('DG', us.dg >= 0 ? '+${us.dg}' : '${us.dg}',
+              us.dg > 0 ? _kGreen : us.dg < 0 ? _kRed : _kMuted),
+        ],
+      ),
+    );
+  }
+
+  Widget _statItem(String label, String value, Color valueColor) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(
+            color: valueColor, fontSize: 16, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(
+            color: _kMuted, fontSize: 9, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  /// Botón de compartir por WhatsApp.
+  Widget _buildShareButton() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: _shareViaWhatsApp,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF25D366).withOpacity(0.1),
+            border: Border.all(color: const Color(0xFF25D366).withOpacity(0.3)),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.share, color: Color(0xFF25D366), size: 16),
+              SizedBox(width: 8),
+              Text('Compartir por WhatsApp',
+                  style: TextStyle(color: Color(0xFF25D366), fontSize: 12, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _shareViaWhatsApp() {
+    if (_matches.isEmpty || _standings.isEmpty) return;
+
+    final us = _standings.cast<ClasificationEntry?>().firstWhere(
+        (e) => e!.inscriptionId == _myInscriptionId, orElse: () => null);
+
+    // Último resultado
+    final played = _matches.where((m) => m.hasResult).toList();
+    String lastResult = '';
+    if (played.isNotEmpty) {
+      final m = played.last;
+      lastResult = '${m.localName} ${m.scoreLocal} - ${m.scoreVisitor} ${m.visitorName}';
+    }
+
+    // Próximo partido
+    final next = _matches.cast<Match?>().firstWhere(
+        (m) => !_isPast(m!), orElse: () => null);
+    String nextMatch = '';
+    if (next != null) {
+      nextMatch = '${next.localName} vs ${next.visitorName}';
+      if (next.date != null) {
+        nextMatch += ' · ${_formatDate(next.date!, next.time)}';
+      }
+    }
+
+    final pos = us != null
+        ? _standings.indexOf(us) + 1
+        : '?';
+
+    final lines = <String>[
+      'Estrella de Boedo · Cat. 2016',
+    ];
+    if (lastResult.isNotEmpty) lines.add('Último: $lastResult');
+    if (nextMatch.isNotEmpty) lines.add('Próximo: $nextMatch');
+    if (us != null) lines.add('Posición: $pos° · ${us.pts} pts');
+    lines.add('');
+    lines.add('https://edb-estrella.web.app');
+
+    final text = Uri.encodeComponent(lines.join('\n'));
+    final url = 'https://wa.me/?text=$text';
+
+    if (kIsWeb) {
+      html.window.open(url, '_blank');
+    }
   }
 
   Widget _nmTeam(String name, bool isUs, {String? logoUrl}) {
@@ -651,12 +987,7 @@ class _HomeScreenState extends State<HomeScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: _kSurface,
-        border: Border(
-          top: const BorderSide(color: _kBorder),
-          bottom: const BorderSide(color: _kBorder),
-          right: const BorderSide(color: _kBorder),
-          left: BorderSide(color: played ? resultColor : _kBorder, width: played ? 3 : 1),
-        ),
+        border: Border.all(color: played ? resultColor : _kBorder),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Padding(
@@ -764,7 +1095,30 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _fixLogo(String? logoUrl, String name, bool isUs) {
-    return TeamLogo(logoUrl: logoUrl, name: name, isUs: isUs, size: 30, fontSize: 10);
+    // Usa iniciales de texto en vez de platform view para mejor performance de scroll
+    final abbrev = name.trim().split(' ').where((w) => w.isNotEmpty).toList();
+    final initials = abbrev.length >= 2
+        ? '${abbrev[0][0]}${abbrev[1][0]}'.toUpperCase()
+        : (abbrev.isNotEmpty ? abbrev[0][0].toUpperCase() : '?');
+    return Container(
+      width: 30, height: 30,
+      decoration: BoxDecoration(
+        color: _kSurface2,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: isUs ? _kBlue : _kBorder,
+          width: isUs ? 2 : 1,
+        ),
+      ),
+      child: Center(
+        child: Text(initials,
+          style: TextStyle(
+            color: isUs ? _kBlue : _kMuted,
+            fontWeight: FontWeight.bold,
+            fontSize: 10,
+          )),
+      ),
+    );
   }
 
   Widget _fixScoreBox(String val, bool highlight) {
@@ -911,6 +1265,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final nextBd = _nextBirthday();
     final extra = DebugOverrides.extraPlayer;
 
+    // Ordenar jugadores por fecha de cumpleaños (mes, día). Sin cumpleaños al final.
+    final sorted = List<Player>.from(_players)..sort((a, b) {
+      final bdA = _playerBirthday(a);
+      final bdB = _playerBirthday(b);
+      if (bdA == null && bdB == null) return 0;
+      if (bdA == null) return 1;
+      if (bdB == null) return -1;
+      final cmp = bdA.$1.compareTo(bdB.$1);
+      return cmp != 0 ? cmp : bdA.$2.compareTo(bdB.$2);
+    });
+
     return Container(
       decoration: BoxDecoration(
         color: _kSurface,
@@ -970,12 +1335,9 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.all(8),
             child: Column(
               children: [
-                for (int i = 0; i < _players.length; i++) ...[
+                for (int i = 0; i < sorted.length; i++) ...[
                   if (i > 0) const SizedBox(height: 6),
-                  _playerCard(
-                    _players[i],
-                    nameOverride: i == 0 ? DebugOverrides.firstPlayerName : null,
-                  ),
+                  _playerCard(sorted[i]),
                 ],
                 if (extra != null) ...[
                   const SizedBox(height: 6),
@@ -995,12 +1357,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'https://api.dicebear.com/9.x/bottts-neutral/png?seed=$seed&size=80&backgroundColor=161b22';
   }
 
-  Widget _playerCard(Player p, {String? nameOverride}) {
+  Widget _playerCard(Player p) {
     final bd = _playerBirthday(p);
     final now = DateTime.now();
     final isToday = bd != null && bd.$1 == now.month && bd.$2 == now.day;
-    final displayName = nameOverride ?? p.fullName;
-    final initials = nameOverride != null ? _initials(nameOverride) : p.initials;
+    final displayName = p.fullName;
 
     return Container(
       decoration: BoxDecoration(
@@ -1011,32 +1372,6 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
-          // Avatar anime
-          Container(
-            width: 48, height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _kSurface2,
-              border: Border.all(
-                color: isToday ? _kYellow : _kBlue.withOpacity(0.4),
-                width: 2,
-              ),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Image.network(
-              _avatarUrl(displayName),
-              width: 48,
-              height: 48,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Center(
-                child: Text(initials,
-                  style: const TextStyle(
-                    color: _kBlue, fontWeight: FontWeight.bold, fontSize: 15)),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // Name
           Expanded(
             child: Text(
               displayName,

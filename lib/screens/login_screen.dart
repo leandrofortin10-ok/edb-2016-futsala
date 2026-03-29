@@ -66,14 +66,14 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('⭐', style: TextStyle(fontSize: 48)),
-              const SizedBox(height: 12),
-              const Text('Estrella de Boedo',
-                style: TextStyle(color: Colors.white, fontSize: 22,
-                    fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              const Text('Torneo Joma · Futsala BA',
-                style: TextStyle(color: _kMuted, fontSize: 13)),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.asset(
+                  'assets/bandera_categoria.jpeg',
+                  width: 220,
+                  fit: BoxFit.contain,
+                ),
+              ),
               const SizedBox(height: 40),
               _field(_emailCtrl, 'Email', Icons.mail_outline,
                   keyboardType: TextInputType.emailAddress),

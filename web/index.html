@@ -32,6 +32,19 @@
 
   <title>EDB Cat.2016</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    /* Deshabilitar descarga de videos */
+    video::-webkit-media-controls-enclosure { overflow: hidden; }
+    video::-webkit-media-controls-panel { width: calc(100% + 30px); }
+    video::-internal-media-controls-download-button { display: none !important; }
+    video::--webkit-media-controls-download-button { display: none !important; }
+  </style>
+  <script>
+    // Bloquear menú contextual en videos para evitar "Guardar video como..."
+    document.addEventListener('contextmenu', function(e) {
+      if (e.target && e.target.tagName === 'VIDEO') e.preventDefault();
+    }, true);
+  </script>
 </head>
 <body>
   <script>

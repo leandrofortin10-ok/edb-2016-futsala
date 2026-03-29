@@ -6,10 +6,10 @@ const birthdays = <String, (int, int)>{
   'CERMELLI':   (4, 8),   // Noah – 8 abr
   'VENEGAS':    (5, 17),  // Gio – 17 may
   'MIGLIO':     (6, 25),  // Franco – 25 jun
+  'OLMO':       (8, 7),   // Agustín – 7 ago
   'STAMBULSKY': (8, 24),  // Gonzalo/Pipi – 24 ago
   'GAMON':      (8, 25),  // Uri – 25 ago
   'FLEITAS':    (9, 20),  // Tatu – 20 sep
-  'OLMO':       (8, 7),   // Agustín – 7 ago
 };
 
 /// Devuelve el cumpleaños (mes, día) del jugador con ese apellido, o null.

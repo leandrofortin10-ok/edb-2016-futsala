@@ -1,7 +1,9 @@
 import 'dart:io';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
+import 'dart:ui_web' as ui_web;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/models.dart';
 import '../models/match_media.dart';
@@ -962,58 +964,38 @@ class _VideoPlayerWidget extends StatefulWidget {
   State<_VideoPlayerWidget> createState() => _VideoPlayerWidgetState();
 }
 
+final _videoViewIds = <String>{};
+
 class _VideoPlayerWidgetState extends State<_VideoPlayerWidget> {
-  late VideoPlayerController _controller;
-  bool _initialized = false;
+  late final String _viewId;
 
   @override
   void initState() {
     super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize().then((_) {
-        if (mounted) setState(() => _initialized = true);
+    _viewId = 'video-${widget.url.hashCode.abs()}';
+    if (!_videoViewIds.contains(_viewId)) {
+      _videoViewIds.add(_viewId);
+      ui_web.platformViewRegistry.registerViewFactory(_viewId, (_) {
+        final video = html.VideoElement()
+          ..src = widget.url
+          ..controls = true
+          ..preload = 'metadata'
+          ..style.width = '100%'
+          ..style.height = '100%'
+          ..style.backgroundColor = 'black'
+          ..style.borderRadius = '8px'
+          ..setAttribute('playsinline', 'true')
+          ..setAttribute('controlsList', 'nodownload');
+        return video;
       });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_initialized) {
-      return const Center(
-          child: CircularProgressIndicator(color: Colors.white));
-    }
-    return GestureDetector(
-      onTap: () => setState(() {
-        _controller.value.isPlaying
-            ? _controller.pause()
-            : _controller.play();
-      }),
-      child: Center(
-        child: AspectRatio(
-          aspectRatio: _controller.value.aspectRatio,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              VideoPlayer(_controller),
-              if (!_controller.value.isPlaying)
-                Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.black45,
-                    shape: BoxShape.circle,
-                  ),
-                  padding: const EdgeInsets.all(14),
-                  child: const Icon(Icons.play_arrow,
-                      color: Colors.white, size: 52),
-                ),
-            ],
-          ),
-        ),
-      ),
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: HtmlElementView(viewType: _viewId),
     );
   }
 }
