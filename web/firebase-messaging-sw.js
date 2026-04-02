@@ -20,6 +20,8 @@ messaging.onBackgroundMessage((payload) => {
     body: body || '',
     icon: '/icons/Icon-192.png',
     badge: '/icons/Icon-192.png',
+    tag: 'edb-push',
+    renotify: false,
     data: payload.data,
   });
 });
