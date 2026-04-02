@@ -116,8 +116,10 @@
 
         var messaging = firebase.messaging();
 
-        // Mostrar notificación cuando la app está en primer plano
+        // Mostrar notificación solo si la página está visible (primer plano).
+        // Si está en background, el SW ya la muestra vía onBackgroundMessage → evita duplicados.
         messaging.onMessage(function(payload) {
+          if (document.visibilityState !== 'visible') return;
           var title = payload.notification && payload.notification.title;
           var body  = payload.notification && payload.notification.body;
           if (!title) return;
