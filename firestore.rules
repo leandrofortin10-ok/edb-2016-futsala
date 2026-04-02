@@ -8,6 +8,18 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
 
+    // push_tokens: cualquier cliente puede registrar/actualizar su propio token
+    // La lectura y el envío de FCM los hace el backend via Admin SDK (omite estas reglas)
+    match /push_tokens/{token} {
+      allow write: if true;
+      allow read: if false;
+    }
+
+    // app_state: solo acceso por Admin SDK (GitHub Actions)
+    match /app_state/{doc} {
+      allow read, write: if false;
+    }
+
     // Todo lo demás: denegado por defecto
     match /{document=**} {
       allow read, write: if false;

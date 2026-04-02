@@ -54,6 +54,9 @@
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         var hadSW = false;
         for (var reg of registrations) {
+          // Preservar el SW de Firebase Messaging — es el que recibe los push en background
+          var swUrl = (reg.active || reg.installing || reg.waiting || {}).scriptURL || '';
+          if (swUrl.includes('firebase-messaging-sw')) continue;
           reg.unregister();
           hadSW = true;
         }

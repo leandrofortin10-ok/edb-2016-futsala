@@ -1,0 +1,46 @@
+name: Test Push (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 'Entorno destino'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+      title:
+        description: 'Título de la notificación'
+        required: true
+        default: '🧪 Test de notificación'
+      body:
+        description: 'Cuerpo del mensaje'
+        required: true
+        default: 'Si ves esto, el push está funcionando correctamente.'
+
+jobs:
+  send-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: .github/scripts/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: .github/scripts
+
+      - name: Enviar notificación de prueba
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TARGET_ENV: ${{ github.event.inputs.env }}
+          NOTIF_TITLE: ${{ github.event.inputs.title }}
+          NOTIF_BODY: ${{ github.event.inputs.body }}
+        run: node test_push.js
+        working-directory: .github/scripts
