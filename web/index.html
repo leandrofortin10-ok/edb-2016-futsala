@@ -128,6 +128,9 @@
           });
         });
 
+        // Borrar token cacheado antes de pedir uno nuevo para evitar tokens inválidos
+        try { await messaging.deleteToken(); } catch (_) {}
+
         var token = await messaging.getToken({
           vapidKey: 'BCKqChkY1vAgc9-9oBNw0Ag6uaayB744ZAl2wY43uKSU1UTAMnUhFSy19yiewT-vAzoPqWHmJZBzLdkqYRBszGY',
         });
