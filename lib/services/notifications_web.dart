@@ -9,7 +9,8 @@ const _vapidKey =
 String get notifPermission => html.Notification.permission ?? 'default';
 
 Future<void> initNotifications() async {
-  await _registerFcmToken();
+  // Fire and forget — no bloquear el arranque de la app
+  _registerFcmToken();
 }
 
 Future<void> _registerFcmToken() async {
