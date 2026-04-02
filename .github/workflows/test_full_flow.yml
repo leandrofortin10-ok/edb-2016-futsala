@@ -2,6 +2,15 @@ name: Test Full Flow (manual)
 
 on:
   workflow_dispatch:
+    inputs:
+      env:
+        description: 'Entorno destino'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
 
 jobs:
   seed-and-notify:
@@ -28,6 +37,6 @@ jobs:
       - name: Detectar cambio y enviar push
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          TARGET_ENV: dev
+          TARGET_ENV: ${{ github.event.inputs.env }}
         run: node check_and_notify.js
         working-directory: .github/scripts
