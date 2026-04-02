@@ -25,6 +25,7 @@ const _kGreen  = Color(0xFF3fb950);
 const _kRed    = Color(0xFFf85149);
 const _kYellow = Color(0xFFd29922);
 const _myInscriptionId = 2129;
+const _kAppVersion = 'v2.8';
 
 
 const _monthNames = [
@@ -177,12 +178,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 }),
               child: const Icon(Icons.bug_report_outlined, color: _kMuted, size: 18)),
           const Spacer(),
+          _buildVersionBadge(),
           if (_loading)
-            const SizedBox(width: 16, height: 16,
-              child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2)),
+            const Padding(
+              padding: EdgeInsets.only(left: 8),
+              child: SizedBox(width: 16, height: 16,
+                child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2))),
         ],
       ),
     );
+  }
+
+  Widget _buildVersionBadge() {
+    final isDev = kIsWeb &&
+        (html.window.location.hostname ?? '').contains('--dev-');
+    final label = isDev ? '$_kAppVersion-dev' : _kAppVersion;
+    final color = isDev ? _kYellow : _kMuted;
+    return Text(label, style: TextStyle(color: color, fontSize: 10));
   }
 
   Widget _buildBannerImage() {
