@@ -28,5 +28,6 @@ jobs:
       - name: Detectar cambio y enviar push
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TARGET_ENV: dev
         run: node check_and_notify.js
         working-directory: .github/scripts

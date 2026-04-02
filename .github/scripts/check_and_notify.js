@@ -126,7 +126,8 @@ async function fetchPlayers() {
 // ── FCM ───────────────────────────────────────────────────────────────────────
 
 async function sendNotifications(notifications) {
-  const snap   = await db.collection('push_tokens').where('env', '==', 'prod').get();
+  const targetEnv = process.env.TARGET_ENV || 'prod';
+  const snap   = await db.collection('push_tokens').where('env', '==', targetEnv).get();
   const tokens = snap.docs.map((d) => d.id).filter(Boolean);
 
   if (tokens.length === 0) {
