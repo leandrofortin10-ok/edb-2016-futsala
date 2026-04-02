@@ -78,7 +78,7 @@
   <script src="flutter_bootstrap.js" async></script>
 
   <script type="module">
-    // Registra el token FCM en Firestore cuando Flutter termina de cargar.
+    // Registra el token FCM en Firestore después de que Flutter carga.
     // Se hace en JS puro para no bloquear la inicialización de Flutter.
     async function registerFcmToken() {
       try {
@@ -110,8 +110,15 @@
       }
     }
 
-    // Esperar a que Flutter renderice el primer frame antes de registrar
-    window.addEventListener('flutter-first-frame', registerFcmToken);
+    // Ejecutar cuando Flutter dispare el primer frame, o tras 5 seg como fallback
+    let registered = false;
+    function tryRegister() {
+      if (registered) return;
+      registered = true;
+      registerFcmToken();
+    }
+    window.addEventListener('flutter-first-frame', tryRegister);
+    setTimeout(tryRegister, 5000);
   </script>
 </body>
 </html>
