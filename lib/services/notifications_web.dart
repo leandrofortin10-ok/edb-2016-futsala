@@ -15,9 +15,13 @@ Future<void> showNotification(String title, String body) async {
       if (result != 'granted') return;
     }
 
-    // Chrome Android requiere ServiceWorker — intentamos primero, fallback a Notification directa
+    // Chrome Android requiere ServiceWorker — intentamos primero, fallback a Notification directa.
+    // IMPORTANTE: navigator.serviceWorker.ready cuelga indefinidamente si ningún SW controla
+    // el scope raíz (pasa cuando el Flutter SW fue desregistrado y solo queda el FCM SW).
+    // Por eso usamos un timeout de 3 s.
     try {
-      final sw = await html.window.navigator.serviceWorker?.ready;
+      final sw = await html.window.navigator.serviceWorker?.ready
+          .timeout(const Duration(seconds: 3));
       if (sw != null) {
         await sw.showNotification(title, {'body': body});
         return;
