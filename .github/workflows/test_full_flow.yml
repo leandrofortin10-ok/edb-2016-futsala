@@ -1,0 +1,32 @@
+name: Test Full Flow (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  seed-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: .github/scripts/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: .github/scripts
+
+      - name: Forzar cambio en estado guardado
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node seed_fake_change.js
+        working-directory: .github/scripts
+
+      - name: Detectar cambio y enviar push
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node check_and_notify.js
+        working-directory: .github/scripts
