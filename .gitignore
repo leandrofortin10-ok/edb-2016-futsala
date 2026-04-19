@@ -57,4 +57,5 @@ android/.cxx/
 # Firebase service account key (NUNCA commitear)
 scripts/service-account-key.json
 functions/node_modules/
+functions/.env
 .github/scripts/node_modules/
