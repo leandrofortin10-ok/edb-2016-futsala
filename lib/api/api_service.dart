@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
+import '../models/category_config.dart';
 
 class ApiService {
   static const _base         = 'https://api.weball.me/public-v2';
@@ -11,7 +12,6 @@ class ApiService {
   static const _instanceUUID = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
   static const _inscriptionId = 2129;
   static const _teamId       = 1464;
-  static const _categoryId   = 10;
   static const _ttl          = Duration(minutes: 5);
 
   static int get myInscriptionId => _inscriptionId;
@@ -39,27 +39,43 @@ class ApiService {
     } catch (_) {}
   }
 
-  // ── Parse helpers (reused by cache and network paths) ────────────────────
+  // ── Parse helpers ────────────────────────────────────────────────────────
 
-  static List<ClasificationEntry> _parseClasification(String body) {
+  static List<ClasificationEntry> _parseClasification(String body, CategoryConfig cat) {
+    if (cat.clasificationIndex == null) return [];
     final List data = jsonDecode(body);
-    final positions = (data.first as Map)['positions'] as List? ?? [];
+    final yearStr = '${cat.year}';
+    // Match by year string in the 'value' field (e.g. "2016 PROMOCIONALES")
+    Map? item;
+    for (final e in data) {
+      if ((e as Map)['value']?.toString().contains(yearStr) == true) {
+        item = e;
+        break;
+      }
+    }
+    item ??= (cat.clasificationIndex! < data.length ? data[cat.clasificationIndex!] as Map : null);
+    if (item == null) return [];
+    final positions = item['positions'] as List? ?? [];
     return positions
         .map((e) => ClasificationEntry.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
-  static List<Match> _parseMatches(String body) {
+  static List<Match> _parseMatches(String body, CategoryConfig cat) {
     final vizData  = jsonDecode(body) as Map<String, dynamic>;
     final children = vizData['children'] as List? ?? [];
+    final yearStr  = cat.year.toString();
     final allMatches = <Match>[];
     for (final child in children) {
       final c = child as Map<String, dynamic>;
-      final label          = c['value'] as String?;
+      final label           = c['value'] as String?;
       final matchesPlanning = c['matchesPlanning'] as List? ?? [];
       for (final m in matchesPlanning) {
-        final match = Match.fromJson(m as Map<String, dynamic>, fechaLabel: label);
-        if (match.involvesInscription(_inscriptionId)) allMatches.add(match);
+        final match = Match.fromJson(m as Map<String, dynamic>, fechaLabel: label, categoryId: cat.categoryId);
+        if (!match.involvesInscription(_inscriptionId)) continue;
+        // If categoryYear is known, filter by it; if null keep the match
+        if (match.categoryYear != null && match.categoryYear != yearStr) continue;
+        allMatches.add(match);
       }
     }
     return allMatches;
@@ -75,9 +91,11 @@ class ApiService {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  static Future<List<ClasificationEntry>> fetchClasification() async {
-    final cached = await _readCache('clasification');
-    if (cached != null) return _parseClasification(cached);
+  static Future<List<ClasificationEntry>> fetchClasification([CategoryConfig? cat]) async {
+    final config = cat ?? CategoryConfig.all.first;
+    const cacheKey = 'clasification';
+    final cached = await _readCache(cacheKey);
+    if (cached != null) return _parseClasification(cached, config);
 
     final uri = Uri.parse(
       '$_base/tournament/$_tournamentId/phase/$_phaseId/group/$_groupId/clasification'
@@ -85,13 +103,15 @@ class ApiService {
     );
     final res = await http.get(uri);
     if (res.statusCode != 200) throw Exception('Error ${res.statusCode}');
-    await _writeCache('clasification', res.body);
-    return _parseClasification(res.body);
+    await _writeCache(cacheKey, res.body);
+    return _parseClasification(res.body, config);
   }
 
-  static Future<List<Match>> fetchMatches() async {
-    final cached = await _readCache('matches');
-    if (cached != null) return _parseMatches(cached);
+  static Future<List<Match>> fetchMatches([CategoryConfig? cat]) async {
+    final config = cat ?? CategoryConfig.all.first;
+    const cacheKey = 'matches';
+    final cached = await _readCache(cacheKey);
+    if (cached != null) return _parseMatches(cached, config);
 
     final uri = Uri.parse(
       '$_base/tournament/$_tournamentId/phase/$_phaseId/visualizer'
@@ -99,8 +119,8 @@ class ApiService {
     );
     final res = await http.get(uri);
     if (res.statusCode != 200) throw Exception('Error ${res.statusCode}');
-    await _writeCache('matches', res.body);
-    return _parseMatches(res.body);
+    await _writeCache(cacheKey, res.body);
+    return _parseMatches(res.body, config);
   }
 
   static Future<MatchDetailData> fetchMatchDetail(int tournamentMatchId) async {
@@ -115,37 +135,38 @@ class ApiService {
     return _parseMatchDetail(res.body);
   }
 
-  static Future<List<Player>> fetchPlayers() async {
-    final cached = await _readCache('players');
+  static Future<List<Player>> fetchPlayers([CategoryConfig? cat]) async {
+    final config = cat ?? CategoryConfig.all.first;
+    final cacheKey = 'players_${config.categoryId}';
+    final cached = await _readCache(cacheKey);
     if (cached != null) return _parsePlayers(cached);
 
     final uri = Uri.parse(
-      '$_base/team/$_teamId/inscription/$_inscriptionId/category/$_categoryId/player',
+      '$_base/team/$_teamId/inscription/$_inscriptionId/category/${config.categoryId}/player',
     );
     final res = await http.get(uri);
     if (res.statusCode != 200) return [];
-    await _writeCache('players', res.body);
+    await _writeCache(cacheKey, res.body);
     return _parsePlayers(res.body);
   }
 
-  // ── Stale snapshot: datos guardados sin importar TTL, para mostrar
-  //    algo instantáneo al abrir la app antes de que llegue la respuesta
-  //    de red. Devuelve null si no hay nada guardado todavía.
+  // ── Stale snapshot ────────────────────────────────────────────────────────
 
   static Future<({
     List<ClasificationEntry> standings,
     List<Match>              matches,
     List<Player>             players,
-  })?> loadStaleSnapshot() async {
+  })?> loadStaleSnapshot([CategoryConfig? cat]) async {
+    final config = cat ?? CategoryConfig.all.first;
     try {
       final prefs = await SharedPreferences.getInstance();
       final cls  = prefs.getString('weball_clasification');
       final mtch = prefs.getString('weball_matches');
       if (cls == null || mtch == null) return null;
-      final plyr = prefs.getString('weball_players');
+      final plyr = prefs.getString('weball_players_${config.categoryId}');
       return (
-        standings: _parseClasification(cls),
-        matches:   _parseMatches(mtch),
+        standings: _parseClasification(cls, config),
+        matches:   _parseMatches(mtch, config),
         players:   plyr != null ? _parsePlayers(plyr) : <Player>[],
       );
     } catch (_) {

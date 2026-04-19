@@ -126,7 +126,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
   Widget _buildScrollBody(Color resultColor, bool played) {
     return StreamBuilder<List<MatchMedia>>(
-      stream: MediaService.watchMatchMedia(m.id.toString()),
+      stream: MediaService.watchMatchMedia(m.tournamentMatchId.toString()),
       builder: (context, snapshot) {
         final items = snapshot.data ?? [];
         final loading = snapshot.connectionState == ConnectionState.waiting;
@@ -537,7 +537,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
   void _openSpreadsheetViewer(int initialIndex) {
     final items = m.spreadsheetPhotos
-        .map((url) => MatchMedia(id: url, matchId: m.id.toString(), url: url, type: MediaType.image, uploadedAt: DateTime.now()))
+        .map((url) => MatchMedia(id: url, matchId: m.tournamentMatchId.toString(), url: url, type: MediaType.image, uploadedAt: DateTime.now()))
         .toList();
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -853,7 +853,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         _uploadProgress = 0;
       });
       await MediaService.uploadMedia(
-        m.id.toString(),
+        m.tournamentMatchId.toString(),
         picked,
         type,
         onProgress: (p) {

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../api/api_service.dart';
+import '../models/category_config.dart';
 import '../models/models.dart';
 import '../services/background_sync.dart';
 import '../services/debug_overrides.dart';
@@ -39,6 +40,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  CategoryConfig _selectedCategory = CategoryConfig.all.first;
   List<ClasificationEntry> _standings = [];
   List<Match> _matches = [];
   List<Player> _players = [];
@@ -71,6 +73,19 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  void _switchCategory(CategoryConfig cat) {
+    if (_selectedCategory.year == cat.year) return;
+    setState(() {
+      _selectedCategory = cat;
+      _standings    = [];
+      _matches      = [];
+      _players      = [];
+      _matchDetails = {};
+      _loading      = true;
+    });
+    _loadAll();
+  }
+
   Future<void> _enableNotifications() async {
     await initNotifications();
     await showNotification(
@@ -83,9 +98,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadAll() async {
     if (mounted) setState(() => _error = null);
 
+    final cat = _selectedCategory;
+
     // Fase 1: mostrar datos guardados instantáneamente (stale-while-revalidate)
     if (_standings.isEmpty) {
-      final stale = await ApiService.loadStaleSnapshot();
+      final stale = await ApiService.loadStaleSnapshot(cat);
       if (stale != null && mounted) {
         setState(() {
           _standings = stale.standings;
@@ -102,15 +119,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final results = await Future.wait([
-        ApiService.fetchClasification(),
-        ApiService.fetchMatches(),
-        ApiService.fetchPlayers(),
+        ApiService.fetchClasification(cat),
+        ApiService.fetchMatches(cat),
+        ApiService.fetchPlayers(cat),
       ]);
       final standings = results[0] as List<ClasificationEntry>;
       final matches   = results[1] as List<Match>;
       final players   = results[2] as List<Player>;
-      // Verificar cambios con datos ya cargados (sin doble llamada a API)
-      await checkForChanges(matches: matches, standings: standings, players: players);
+      // Notificar cambios solo para la categoría principal
+      if (cat.year == CategoryConfig.all.first.year) {
+        await checkForChanges(matches: matches, standings: standings, players: players);
+      }
 
       // Fetch details for played matches (to get scorer/card data)
       final played = matches.where((m) => m.hasResult && m.tournamentMatchId != 0).toList();
@@ -292,13 +311,46 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildCategorySelector() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Wrap(
+        spacing: 8,
+        children: CategoryConfig.all.map((cat) {
+          final selected = cat.year == _selectedCategory.year;
+          return GestureDetector(
+            onTap: () => _switchCategory(cat),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: selected ? _kBlue : Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: selected ? _kBlue : _kBorder),
+              ),
+              child: Text(
+                cat.label,
+                style: TextStyle(
+                  color: selected ? Colors.white : _kMuted,
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildBodyMobile() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
       cacheExtent: 2000,
       children: [
         _buildBannerImage(),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        _buildCategorySelector(),
+        const SizedBox(height: 8),
         RepaintBoundary(child: _buildNextMatch()),
         const SizedBox(height: 12),
         RepaintBoundary(child: _buildQuickStats()),
@@ -332,7 +384,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildBannerImage(),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
+                      _buildCategorySelector(),
+                      const SizedBox(height: 8),
                       RepaintBoundary(child: _buildNextMatch()),
                       const SizedBox(height: 12),
                       RepaintBoundary(child: _buildQuickStats()),
@@ -756,7 +810,7 @@ class _HomeScreenState extends State<HomeScreen> {
         : '?';
 
     final lines = <String>[
-      'Estrella de Boedo · Cat. 2016',
+      'Estrella de Boedo · ${_selectedCategory.label}',
     ];
     if (lastResult.isNotEmpty) lines.add('Último: $lastResult');
     if (nextMatch.isNotEmpty) lines.add('Próximo: $nextMatch');

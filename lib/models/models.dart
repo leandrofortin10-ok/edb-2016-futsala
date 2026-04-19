@@ -67,6 +67,7 @@ class Match {
   final String? payment;
   final String? refereeClothing;
   final List<String> spreadsheetPhotos;
+  final String? categoryYear; // e.g. "2016", "2017", "2018", "2019"
 
   Match({
     required this.id,
@@ -86,27 +87,35 @@ class Match {
     this.payment,
     this.refereeClothing,
     this.spreadsheetPhotos = const [],
+    this.categoryYear,
   });
 
   // Response structure: visualizer.children[].matchesPlanning[]
   // clubHome/clubAway.clubInscription, valueScoreHome/Away, dateTime
-  factory Match.fromJson(Map<String, dynamic> j, {String? fechaLabel}) {
+  factory Match.fromJson(Map<String, dynamic> j, {String? fechaLabel, int? categoryId}) {
     final homeCi = (j['clubHome'] as Map?)?['clubInscription'] as Map?;
     final awayCi = (j['clubAway'] as Map?)?['clubInscription'] as Map?;
     final homeVac = j['vacancyHome'] as Map?;
     final awayVac = j['vacancyAway'] as Map?;
 
     String? date, time;
-    // tm[0] es siempre vacío en esta API. Los datos reales están en tm[1]+.
-    // Buscamos el primer tournamentMatch con datos reales.
     Map? tmReal;
     final tmList = j['tournamentMatches'];
     if (tmList is List) {
-      for (final t in tmList) {
-        final mi = (t as Map?)?['matchInfo'] as Map?;
-        if (mi?['dateTime'] != null || t?['scoreHome'] != null) {
-          tmReal = t as Map?;
-          break;
+      // Prefer the tournamentMatch for the selected category
+      if (categoryId != null) {
+        for (final t in tmList) {
+          final ciId = _parseInt((t as Map?)?['category']?['categoryInstance']?['id']);
+          if (ciId == categoryId) { tmReal = t as Map?; break; }
+        }
+      }
+      // Fallback: first entry with real data
+      if (tmReal == null) {
+        for (final t in tmList) {
+          final mi = (t as Map?)?['matchInfo'] as Map?;
+          if (mi?['dateTime'] != null || (t as Map?)?['scoreHome'] != null) {
+            tmReal = t as Map?; break;
+          }
         }
       }
     }
@@ -145,6 +154,12 @@ class Match {
         ? photosRaw.whereType<String>().toList()
         : <String>[];
 
+    // category lives inside tournamentMatches[n].category.categoryInstance
+    final categoryName = tmReal?['category']?['categoryInstance']?['name'] as String?;
+    final categoryYear = categoryName != null && categoryName.length >= 4
+        ? categoryName.substring(0, 4)
+        : null;
+
     return Match(
       id:                    _parseIntOrZero(j['id']),
       tournamentMatchId:     _parseIntOrZero(tmReal?['id']),
@@ -163,6 +178,7 @@ class Match {
       payment:               payment,
       refereeClothing:       refereeClothing,
       spreadsheetPhotos:     spreadsheetPhotos,
+      categoryYear:          categoryYear,
     );
   }
 
