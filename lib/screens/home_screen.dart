@@ -81,7 +81,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadAll() async {
-    setState(() { _loading = true; _error = null; });
+    if (mounted) setState(() => _error = null);
+
+    // Fase 1: mostrar datos guardados instantáneamente (stale-while-revalidate)
+    if (_standings.isEmpty) {
+      final stale = await ApiService.loadStaleSnapshot();
+      if (stale != null && mounted) {
+        setState(() {
+          _standings = stale.standings;
+          _matches   = stale.matches;
+          _players   = stale.players;
+          _loading   = false;
+        });
+      }
+    }
+
+    // Fase 2: traer datos frescos (desde cache si TTL vigente, si no desde red)
+    // Solo muestra spinner si todavía no tenemos nada que mostrar
+    if (_standings.isEmpty && mounted) setState(() => _loading = true);
+
     try {
       final results = await Future.wait([
         ApiService.fetchClasification(),
@@ -125,7 +143,11 @@ class _HomeScreenState extends State<HomeScreen> {
         _lastUpdate   = DateTime.now();
       });
     } catch (e) {
-      setState(() { _loading = false; _error = e.toString(); });
+      if (mounted) setState(() {
+        _loading = false;
+        // Solo mostrar error si no tenemos datos previos que mostrar
+        if (_standings.isEmpty) _error = e.toString();
+      });
     }
   }
 
