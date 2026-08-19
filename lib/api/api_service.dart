@@ -7,8 +7,13 @@ import '../models/category_config.dart';
 class ApiService {
   static const _base         = 'https://api.weball.me/public-v2';
   static const _tournamentId = 566;
-  static const _phaseId      = 942;
-  static const _groupId      = 1440;
+  // Fase CLAUSURA 2026 (la Apertura era 942).
+  // Fases del torneo 566: GET /tournament/566/phase
+  static const _phaseId      = 1392;
+  // La organizacion todavia no publico la tabla del Clausura:
+  // GET /tournament/566/phase/1392/clasification-groups devuelve [].
+  // Cuando la publiquen, poner aca el id del grupo (en la Apertura era 1440).
+  static const int? _groupId = null;
   static const _instanceUUID = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
   static const _inscriptionId = 2129;
   static const _teamId       = 1464;
@@ -43,7 +48,9 @@ class ApiService {
 
   static List<ClasificationEntry> _parseClasification(String body, CategoryConfig cat) {
     if (cat.clasificationIndex == null) return [];
-    final List data = jsonDecode(body);
+    final decoded = jsonDecode(body);
+    if (decoded is! List) return [];
+    final List data = decoded;
     final yearStr = '${cat.year}';
     // Match by year string in the 'value' field (e.g. "2016 PROMOCIONALES")
     Map? item;
@@ -92,13 +99,17 @@ class ApiService {
   // ── Public API ────────────────────────────────────────────────────────────
 
   static Future<List<ClasificationEntry>> fetchClasification([CategoryConfig? cat]) async {
+    final groupId = _groupId;
+    // Sin grupo de clasificacion no hay tabla que pedir: la UI muestra
+    // el estado vacio ("Sin datos de tabla") en vez de un error.
+    if (groupId == null) return [];
     final config = cat ?? CategoryConfig.all.first;
     const cacheKey = 'clasification';
     final cached = await _readCache(cacheKey);
     if (cached != null) return _parseClasification(cached, config);
 
     final uri = Uri.parse(
-      '$_base/tournament/$_tournamentId/phase/$_phaseId/group/$_groupId/clasification'
+      '$_base/tournament/$_tournamentId/phase/$_phaseId/group/$groupId/clasification'
       '?instanceUUID=$_instanceUUID',
     );
     final res = await http.get(uri);
@@ -160,12 +171,12 @@ class ApiService {
     final config = cat ?? CategoryConfig.all.first;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final cls  = prefs.getString('weball_clasification');
       final mtch = prefs.getString('weball_matches');
-      if (cls == null || mtch == null) return null;
+      if (mtch == null) return null;
+      final cls  = prefs.getString('weball_clasification');
       final plyr = prefs.getString('weball_players_${config.categoryId}');
       return (
-        standings: _parseClasification(cls, config),
+        standings: cls != null ? _parseClasification(cls, config) : <ClasificationEntry>[],
         matches:   _parseMatches(mtch, config),
         players:   plyr != null ? _parsePlayers(plyr) : <Player>[],
       );

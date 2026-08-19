@@ -11,8 +11,12 @@ const admin = require('firebase-admin');
 const MY_INSCRIPTION_ID = 2129;
 const BASE              = 'https://api.weball.me/public-v2';
 const TOURNAMENT_ID     = 566;
-const PHASE_ID          = 942;
-const GROUP_ID          = 1440;
+// Fase CLAUSURA 2026 (la Apertura era 942). Ver: GET /tournament/566/phase
+const PHASE_ID          = 1392;
+// La organizacion todavia no publico la tabla del Clausura:
+// GET /tournament/566/phase/1392/clasification-groups devuelve [].
+// Cuando la publiquen, poner aca el id del grupo (en la Apertura era 1440).
+const GROUP_ID          = null;
 const INSTANCE_UUID     = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
 const TEAM_ID           = 1464;
 const CATEGORY_ID       = 10;
@@ -104,6 +108,9 @@ async function fetchMatches() {
 }
 
 async function fetchStandings() {
+  // Sin grupo de clasificacion no hay tabla: se omiten las notificaciones
+  // de cambio de posicion hasta que la organizacion la publique.
+  if (GROUP_ID == null) return [];
   const data = await fetchJson(
     `${BASE}/tournament/${TOURNAMENT_ID}/phase/${PHASE_ID}/group/${GROUP_ID}/clasification?instanceUUID=${INSTANCE_UUID}`,
   );
@@ -284,7 +291,10 @@ async function main() {
         rivalName: rival,
       };
     }),
-    position:  newPos || savedPos,
+    // Sin tabla no hay posicion que guardar: se resetea a 0 para que, cuando
+    // la publiquen, la primera corrida solo siembre el estado sin notificar
+    // un salto de puesto heredado de la Apertura.
+    position:  standings.length > 0 ? (newPos || savedPos) : 0,
     players:   [...newPlayerSet],
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });

@@ -7,7 +7,7 @@ const admin = require('firebase-admin');
 const MY_INSCRIPTION_ID = 2129;
 const BASE              = 'https://api.weball.me/public-v2';
 const TOURNAMENT_ID     = 566;
-const PHASE_ID          = 942;
+const PHASE_ID          = 1392;
 const INSTANCE_UUID     = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
