@@ -142,10 +142,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       // Cargar clima ANTES de limpiar overrides
-      final next = matches.firstWhere((m) => !_isPast(m), orElse: () => matches.last);
-      final weatherDate = DebugOverrides.nextMatchDate ?? next.date;
+      final next = _nextMatch(matches);
+      final weatherDate = DebugOverrides.nextMatchDate ?? next?.date;
       final weatherTime = DebugOverrides.nextMatchDate != null
-          ? DebugOverrides.nextMatchTime : next.time;
+          ? DebugOverrides.nextMatchTime : next?.time;
       DebugOverrides.clear();
       WeatherInfo? weather;
       if (weatherDate != null) {
@@ -441,7 +441,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_matches.isEmpty) {
       return _emptyCard('Sin partidos encontrados');
     }
-    final next = _matches.firstWhere((m) => !_isPast(m), orElse: () => _matches.last);
+    final next = _nextMatch() ?? _matches.last;
     final isHome = next.localInscriptionId == _myInscriptionId;
     final played = next.hasResult;
     // Apply debug overrides for date/time
@@ -632,8 +632,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Countdown al próximo partido.
   Widget _buildCountdown() {
-    final next = _matches.cast<Match?>().firstWhere(
-        (m) => !_isPast(m!), orElse: () => null);
+    final next = _nextMatch();
     if (next == null || next.date == null) {
       return Container(
         padding: const EdgeInsets.all(12),
@@ -795,8 +794,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Próximo partido
-    final next = _matches.cast<Match?>().firstWhere(
-        (m) => !_isPast(m!), orElse: () => null);
+    final next = _nextMatch();
     String nextMatch = '';
     if (next != null) {
       nextMatch = '${next.localName} vs ${next.visitorName}';
@@ -1613,6 +1611,17 @@ class _HomeScreenState extends State<HomeScreen> {
     if (d == null) return false;
     final today = DateTime.now();
     return d.isBefore(DateTime(today.year, today.month, today.day));
+  }
+
+  /// Próximo partido: el no jugado con la fecha confirmada más cercana. Los que
+  /// no tienen fecha (a confirmar / suspendidos) no cuentan como próximo, salvo
+  /// que ninguno tenga fecha; en ese caso se usa el primero del fixture.
+  Match? _nextMatch([List<Match>? source]) {
+    final upcoming = (source ?? _matches).where((m) => !_isPast(m)).toList();
+    if (upcoming.isEmpty) return null;
+    final dated = upcoming.where((m) => m.date != null).toList()
+      ..sort((a, b) => a.date!.compareTo(b.date!));
+    return dated.isNotEmpty ? dated.first : upcoming.first;
   }
 
   String _initials(String name) {
