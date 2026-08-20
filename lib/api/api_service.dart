@@ -14,6 +14,15 @@ class ApiService {
   // GET /tournament/566/phase/1392/clasification-groups devuelve [].
   // Cuando la publiquen, poner aca el id del grupo (en la Apertura era 1440).
   static const int? _groupId = null;
+  // Fallback mientras la tabla del Clausura no este publicada: usamos la grilla
+  // de equipos del Apertura (fase 942, grupo 1440 "CATEGORIAS") con las
+  // estadisticas en cero, para mostrar la tabla vacia con una leyenda.
+  static const int _fallbackPhaseId = 942;
+  static const int _fallbackGroupId = 1440;
+
+  // true cuando la tabla mostrada es la real del Clausura; false cuando es la
+  // grilla provisoria en cero (la liga aun no publico los datos).
+  static bool get standingsPublished => _groupId != null;
   static const _instanceUUID = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
   static const _inscriptionId = 2129;
   static const _teamId       = 1464;
@@ -109,11 +118,12 @@ class ApiService {
   // ── Public API ────────────────────────────────────────────────────────────
 
   static Future<List<ClasificationEntry>> fetchClasification([CategoryConfig? cat]) async {
-    final groupId = _groupId;
-    // Sin grupo de clasificacion no hay tabla que pedir: la UI muestra
-    // el estado vacio ("Sin datos de tabla") en vez de un error.
-    if (groupId == null) return [];
     final config = cat ?? CategoryConfig.all.first;
+    final groupId = _groupId;
+    // Tabla del Clausura aun no publicada: devolvemos la grilla de equipos en
+    // cero (la UI agrega la leyenda correspondiente).
+    if (groupId == null) return _fetchZeroedStandings(config);
+
     const cacheKey = 'clasification';
     final cached = await _readCache(cacheKey);
     if (cached != null) return _parseClasification(cached, config);
@@ -127,6 +137,34 @@ class ApiService {
     await _writeCache(cacheKey, res.body);
     return _parseClasification(res.body, config);
   }
+
+  // Trae la lista de equipos de la categoria (del grupo del Apertura) y la
+  // devuelve con todas las estadisticas en cero. Preserva el orden de la API.
+  static Future<List<ClasificationEntry>> _fetchZeroedStandings(CategoryConfig config) async {
+    const cacheKey = 'clasification_fallback';
+    var body = await _readCache(cacheKey);
+    if (body == null) {
+      final uri = Uri.parse(
+        '$_base/tournament/$_tournamentId/phase/$_fallbackPhaseId/group/$_fallbackGroupId/clasification'
+        '?instanceUUID=$_instanceUUID',
+      );
+      final res = await http.get(uri);
+      if (res.statusCode != 200) return [];
+      body = res.body;
+      await _writeCache(cacheKey, body);
+    }
+    return _zeroStandings(_parseClasification(body, config));
+  }
+
+  // Devuelve las mismas entradas con todas las estadisticas en cero.
+  static List<ClasificationEntry> _zeroStandings(List<ClasificationEntry> src) => src
+      .map((e) => ClasificationEntry(
+            inscriptionId:   e.inscriptionId,
+            inscriptionName: e.inscriptionName,
+            logo:            e.logo,
+            pts: 0, pj: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0,
+          ))
+      .toList();
 
   static Future<List<Match>> fetchMatches([CategoryConfig? cat]) async {
     final config = cat ?? CategoryConfig.all.first;
@@ -183,10 +221,15 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       final mtch = prefs.getString('weball_matches');
       if (mtch == null) return null;
-      final cls  = prefs.getString('weball_clasification');
+      // Tabla real (Clausura) o grilla en cero (fallback) segun este publicada.
+      final clsKey = _groupId == null ? 'weball_clasification_fallback' : 'weball_clasification';
+      final cls  = prefs.getString(clsKey);
       final plyr = prefs.getString('weball_players_${config.categoryId}');
+      final staleStandings = cls == null
+          ? <ClasificationEntry>[]
+          : (_groupId == null ? _zeroStandings(_parseClasification(cls, config)) : _parseClasification(cls, config));
       return (
-        standings: cls != null ? _parseClasification(cls, config) : <ClasificationEntry>[],
+        standings: staleStandings,
         matches:   _parseMatches(mtch, config),
         players:   plyr != null ? _parsePlayers(plyr) : <Player>[],
       );

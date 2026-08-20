@@ -925,18 +925,23 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Tabla de posiciones ────────────────────────────────────────────────────
   Widget _buildStandings() {
     if (_standings.isEmpty) return _emptyCard('Sin datos de tabla');
-    var sorted = [..._standings]..sort((a, b) {
-      final c = b.pts.compareTo(a.pts);
-      return c != 0 ? c : b.dg.compareTo(a.dg);
-    });
-    // Aplicar override de posición visual
-    final posOverride = DebugOverrides.myTablePosition;
-    if (posOverride != null) {
-      final idx = sorted.indexWhere((e) => e.inscriptionId == _myInscriptionId);
-      if (idx >= 0) {
-        final entry = sorted.removeAt(idx);
-        final target = (posOverride - 1).clamp(0, sorted.length);
-        sorted.insert(target, entry);
+    final published = ApiService.standingsPublished;
+    var sorted = [..._standings];
+    // Con la tabla en cero (aun no publicada) preservamos el orden de la API.
+    if (published) {
+      sorted.sort((a, b) {
+        final c = b.pts.compareTo(a.pts);
+        return c != 0 ? c : b.dg.compareTo(a.dg);
+      });
+      // Aplicar override de posición visual
+      final posOverride = DebugOverrides.myTablePosition;
+      if (posOverride != null) {
+        final idx = sorted.indexWhere((e) => e.inscriptionId == _myInscriptionId);
+        if (idx >= 0) {
+          final entry = sorted.removeAt(idx);
+          final target = (posOverride - 1).clamp(0, sorted.length);
+          sorted.insert(target, entry);
+        }
       }
     }
     return Container(
@@ -964,10 +969,35 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           ...sorted.asMap().entries.map((e) => _standingsRow(e.key + 1, e.value, e.key == sorted.length - 1)),
+          if (!published) _standingsLegend(),
         ],
       ),
     );
   }
+
+  // Leyenda cuando la tabla se muestra en cero porque la liga aun no publico
+  // los datos del Clausura.
+  Widget _standingsLegend() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+    decoration: const BoxDecoration(
+      color: _kSurface2,
+      border: Border(top: BorderSide(color: _kBorder, width: 0.5)),
+      borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
+    ),
+    child: const Row(
+      children: [
+        Icon(Icons.info_outline, size: 13, color: _kMuted),
+        SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'La liga aún no publicó la tabla del Clausura.',
+            style: TextStyle(color: _kMuted, fontSize: 11, fontStyle: FontStyle.italic),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _standingsRow(int pos, ClasificationEntry e, bool isLast) {
     final isUs = e.inscriptionId == _myInscriptionId;
