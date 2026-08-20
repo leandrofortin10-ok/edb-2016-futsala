@@ -88,9 +88,19 @@ class ApiService {
     return allMatches;
   }
 
+  // Jugadores que ya no forman parte del plantel: se excluyen aunque la API
+  // de weball los siga devolviendo. Comparar por nombre completo en mayusculas.
+  static const Set<String> excludedPlayers = {
+    'CAMILO LUIS LUJAN DEL BAO',
+    'GONZALO NICOLAS STAMBULSKY',
+  };
+
   static List<Player> _parsePlayers(String body) {
     final List data = jsonDecode(body);
-    return data.map((e) => Player.fromJson(e as Map<String, dynamic>)).toList();
+    return data
+        .map((e) => Player.fromJson(e as Map<String, dynamic>))
+        .where((p) => !excludedPlayers.contains(p.fullName.toUpperCase()))
+        .toList();
   }
 
   static MatchDetailData _parseMatchDetail(String body) =>
