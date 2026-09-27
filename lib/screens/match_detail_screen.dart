@@ -41,6 +41,9 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
   Match get m => widget.match;
   bool get isHome => m.localInscriptionId == _kMyInscriptionId;
+  bool get isAway => m.visitorInscriptionId == _kMyInscriptionId;
+  // Partidos de otros equipos (desde "Resultados por fecha"): sin perspectiva propia
+  bool get isOurs => isHome || isAway;
 
   @override
   void initState() {
@@ -70,7 +73,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     final them  = isHome ? m.scoreVisitor  : m.scoreLocal;
 
     Color resultColor = _kBorder;
-    if (played && us != null && them != null) {
+    if (isOurs && played && us != null && them != null) {
       if (us > them)       resultColor = _kGreen;
       else if (us < them)  resultColor = _kRed;
       else                 resultColor = _kYellow;
@@ -701,7 +704,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
                     ],
                   ),
           ),
-          _teamColumn(m.visitorLogo, m.visitorName, !isHome, CrossAxisAlignment.start),
+          _teamColumn(m.visitorLogo, m.visitorName, isAway, CrossAxisAlignment.start),
         ],
       ),
     );

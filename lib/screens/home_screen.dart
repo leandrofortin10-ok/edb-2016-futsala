@@ -41,7 +41,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<ClasificationEntry> _standings = [];
-  List<Match> _matches = [];
+  List<Match> _matches = [];      // solo los de Estrella
+  List<Match> _allMatches = [];   // todos los equipos (resultados por fecha)
+  String? _selectedFecha;
   List<Player> _players = [];
   Map<int, MatchDetailData> _matchDetails = {};
   bool _loading = true;
@@ -86,12 +88,13 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final results = await Future.wait([
         ApiService.fetchClasification(),
-        ApiService.fetchMatches(),
+        ApiService.fetchAllMatches(),
         ApiService.fetchPlayers(),
       ]);
-      final standings = results[0] as List<ClasificationEntry>;
-      final matches   = results[1] as List<Match>;
-      final players   = results[2] as List<Player>;
+      final standings  = results[0] as List<ClasificationEntry>;
+      final allMatches = results[1] as List<Match>;
+      final players    = results[2] as List<Player>;
+      final matches    = allMatches.where((m) => m.involvesInscription(_myInscriptionId)).toList();
       // Verificar cambios con datos ya cargados (sin doble llamada a API).
       // Sin await: una notificación trabada no debe bloquear la carga de la pantalla.
       unawaited(checkForChanges(matches: matches, standings: standings, players: players)
@@ -121,13 +124,19 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _standings    = standings;
         _matches      = matches;
+        _allMatches   = allMatches;
+        // Conservar la fecha elegida entre refrescos; si no hay, la última con resultados
+        final fechas = _fechaLabels(allMatches);
+        if (_selectedFecha == null || !fechas.contains(_selectedFecha)) {
+          _selectedFecha = _defaultFecha(allMatches, fechas);
+        }
         _players      = players;
         _matchDetails = detailMap;
         _weather      = weather;
         _loading      = false;
         _lastUpdate   = DateTime.now();
       });
-      _precacheFixtureLogos(matches);
+      _precacheFixtureLogos(allMatches);
     } catch (e) {
       setState(() { _loading = false; _error = e.toString(); });
     }
@@ -287,6 +296,8 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 28),
         RepaintBoundary(child: _buildSection('Tabla de posiciones', _buildStandings())),
         const SizedBox(height: 28),
+        RepaintBoundary(child: _buildSection('Resultados por fecha', _buildRoundResults())),
+        const SizedBox(height: 28),
         RepaintBoundary(child: _buildSection('Fixture · Estrella de Boedo', _buildFixture())),
         const SizedBox(height: 28),
         RepaintBoundary(child: _buildSection('Goleadores · Estrella de Boedo', _buildScorers())),
@@ -333,6 +344,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       RepaintBoundary(child: _buildSection(
                           'Tabla de posiciones', _buildStandings())),
+                      const SizedBox(height: 32),
+                      RepaintBoundary(child: _buildSection(
+                          'Resultados por fecha', _buildRoundResults())),
                       const SizedBox(height: 32),
                       RepaintBoundary(child: _buildSection(
                           'Goleadores · Estrella de Boedo', _buildScorers())),
@@ -946,6 +960,138 @@ class _HomeScreenState extends State<HomeScreen> {
           _SC(dg >= 0 ? '+$dg' : '$dg',
               color: dg > 0 ? _kGreen : dg < 0 ? _kRed : _kMuted),
         ],
+      ),
+    );
+  }
+
+  // ── Resultados por fecha (todos los equipos) ───────────────────────────────
+  List<String> _fechaLabels(List<Match> all) {
+    final labels = <String>[];
+    for (final m in all) {
+      final l = m.fechaLabel;
+      if (l != null && !labels.contains(l)) labels.add(l);
+    }
+    return labels;
+  }
+
+  /// Última fecha con algún resultado cargado; si no hay ninguna, la primera.
+  String? _defaultFecha(List<Match> all, List<String> fechas) {
+    for (final f in fechas.reversed) {
+      if (all.any((m) => m.fechaLabel == f && m.hasResult)) return f;
+    }
+    return fechas.isEmpty ? null : fechas.first;
+  }
+
+  Widget _buildRoundResults() {
+    final fechas = _fechaLabels(_allMatches);
+    if (fechas.isEmpty || _selectedFecha == null) return _emptyCard('Sin partidos');
+    final idx = fechas.indexOf(_selectedFecha!);
+    final round = _allMatches.where((m) => m.fechaLabel == _selectedFecha).toList();
+
+    Widget arrow(IconData icon, int? target) => IconButton(
+      icon: Icon(icon, size: 22),
+      color: _kBlue,
+      disabledColor: _kBorder,
+      visualDensity: VisualDensity.compact,
+      onPressed: target == null ? null : () => setState(() => _selectedFecha = fechas[target]),
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: _kSurface,
+        border: Border.all(color: _kBorder),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        children: [
+          // Selector de fecha
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+            decoration: const BoxDecoration(
+              color: _kSurface2,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
+            ),
+            child: Row(
+              children: [
+                arrow(Icons.chevron_left, idx > 0 ? idx - 1 : null),
+                Expanded(
+                  child: Text(_selectedFecha!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                ),
+                arrow(Icons.chevron_right, idx < fechas.length - 1 ? idx + 1 : null),
+              ],
+            ),
+          ),
+          ...round.asMap().entries.map((e) => _roundRow(e.value, e.key == round.length - 1)),
+        ],
+      ),
+    );
+  }
+
+  Widget _roundRow(Match m, bool isLast) {
+    final isOurs = m.involvesInscription(_myInscriptionId);
+    final localName = m.localName ?? '—';
+    final visitorName = m.visitorName ?? '—';
+    final localUs = m.localInscriptionId == _myInscriptionId;
+    final visitorUs = m.visitorInscriptionId == _myInscriptionId;
+    final played = m.hasResult;
+
+    TextStyle nameStyle(bool us) => TextStyle(
+      color: us ? _kBlue : Colors.white,
+      fontWeight: us ? FontWeight.bold : FontWeight.w500,
+      fontSize: 11,
+    );
+
+    final Widget center;
+    if (played) {
+      final sl = m.scoreLocal!, sv = m.scoreVisitor!;
+      center = Row(mainAxisSize: MainAxisSize.min, children: [
+        _fixScoreBox('$sl', sl > sv),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 3),
+          child: Text('–', style: TextStyle(color: _kMuted, fontSize: 12)),
+        ),
+        _fixScoreBox('$sv', sv > sl),
+      ]);
+    } else {
+      center = Text(
+        _isPast(m) ? '?–?' : (m.date != null ? _formatDate(m.date!, m.time) : 'A confirmar'),
+        style: TextStyle(color: m.date == null && !_isPast(m) ? _kYellow : _kMuted, fontSize: 10),
+      );
+    }
+
+    return InkWell(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => MatchDetailScreen(match: m)),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        decoration: BoxDecoration(
+          color: isOurs ? _kBlue.withOpacity(0.08) : Colors.transparent,
+          border: Border(
+            bottom: isLast ? BorderSide.none : const BorderSide(color: _kBorder, width: 0.5),
+            left: isOurs ? const BorderSide(color: _kBlue, width: 2) : BorderSide.none,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(localName,
+                textAlign: TextAlign.right, maxLines: 2,
+                overflow: TextOverflow.ellipsis, style: nameStyle(localUs)),
+            ),
+            const SizedBox(width: 6),
+            _fixLogo(m.localLogo, localName, localUs),
+            SizedBox(width: 78, child: Center(child: center)),
+            _fixLogo(m.visitorLogo, visitorName, visitorUs),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(visitorName,
+                maxLines: 2, overflow: TextOverflow.ellipsis, style: nameStyle(visitorUs)),
+            ),
+          ],
+        ),
       ),
     );
   }

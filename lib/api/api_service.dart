@@ -40,7 +40,11 @@ class ApiService {
   // NOTA: cada match tiene tournamentMatches[4]. tm[0] siempre es vacío.
   // Los datos reales (score, fecha) están en tm[1] (el partido oficial que
   // cuenta para la tabla). tm[2] y tm[3] son sub-partidos del mismo fixture.
-  static Future<List<Match>> fetchMatches() async {
+  static Future<List<Match>> fetchMatches() async =>
+      (await fetchAllMatches()).where((m) => m.involvesInscription(_inscriptionId)).toList();
+
+  /// Todos los partidos de la fase (todos los equipos), en orden de fecha.
+  static Future<List<Match>> fetchAllMatches() async {
     final uri = Uri.parse(
       '$_base/tournament/$_tournamentId/phase/$_phaseId/visualizer'
       '?instanceUUID=$_instanceUUID',
@@ -57,10 +61,7 @@ class ApiService {
       final label = c['value'] as String?;
       final matchesPlanning = c['matchesPlanning'] as List? ?? [];
       for (final m in matchesPlanning) {
-        final match = Match.fromJson(m as Map<String, dynamic>, fechaLabel: label);
-        if (match.involvesInscription(_inscriptionId)) {
-          allMatches.add(match);
-        }
+        allMatches.add(Match.fromJson(m as Map<String, dynamic>, fechaLabel: label));
       }
     }
     return allMatches;
