@@ -11,6 +11,7 @@ import '../services/debug_overrides.dart';
 import '../services/notifications.dart';
 import '../services/weather_service.dart';
 import '../utils/birthdays.dart';
+import '../utils/team_logos.dart';
 import '../widgets/team_logo.dart';
 import 'debug_screen.dart';
 import 'match_detail_screen.dart';
@@ -1038,7 +1039,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             padding: EdgeInsets.symmetric(horizontal: 3),
                             child: Text('–', style: TextStyle(color: _kMuted, fontSize: 12)),
                           ),
-                          _fixScoreBox('${m.scoreVisitor}', !isHome && them! > us!),
+                          _fixScoreBox('${m.scoreVisitor}', !isHome && us! > them!),
                         ])
                       : pastNoResult
                           ? Column(mainAxisSize: MainAxisSize.min, children: [
@@ -1097,13 +1098,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _fixLogo(String? logoUrl, String name, bool isUs) {
-    // Usa iniciales de texto en vez de platform view para mejor performance de scroll
+    // Escudo desde assets (no platform view: mantiene la performance de scroll).
+    // Si el equipo no tiene escudo empaquetado, se muestran las iniciales.
     final abbrev = name.trim().split(' ').where((w) => w.isNotEmpty).toList();
     final initials = abbrev.length >= 2
         ? '${abbrev[0][0]}${abbrev[1][0]}'.toUpperCase()
         : (abbrev.isNotEmpty ? abbrev[0][0].toUpperCase() : '?');
+    final initialsText = Center(
+      child: Text(initials,
+        style: TextStyle(
+          color: isUs ? _kBlue : _kMuted,
+          fontWeight: FontWeight.bold,
+          fontSize: 10,
+        )),
+    );
+    final asset = teamLogoAsset(name);
     return Container(
       width: 30, height: 30,
+      padding: asset != null ? const EdgeInsets.all(3) : null,
       decoration: BoxDecoration(
         color: _kSurface2,
         shape: BoxShape.circle,
@@ -1112,14 +1124,12 @@ class _HomeScreenState extends State<HomeScreen> {
           width: isUs ? 2 : 1,
         ),
       ),
-      child: Center(
-        child: Text(initials,
-          style: TextStyle(
-            color: isUs ? _kBlue : _kMuted,
-            fontWeight: FontWeight.bold,
-            fontSize: 10,
-          )),
-      ),
+      child: asset == null
+          ? initialsText
+          : Image.asset(asset,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, __, ___) => initialsText),
     );
   }
 
