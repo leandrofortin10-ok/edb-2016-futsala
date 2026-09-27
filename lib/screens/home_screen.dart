@@ -127,6 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _loading      = false;
         _lastUpdate   = DateTime.now();
       });
+      _precacheFixtureLogos(matches);
     } catch (e) {
       setState(() { _loading = false; _error = e.toString(); });
     }
@@ -1095,6 +1096,20 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     ),
     );
+  }
+
+  /// Decodifica los escudos del fixture antes de que se vean, para que el
+  /// primer scroll hasta el fixture no pague el costo de decodificación.
+  void _precacheFixtureLogos(List<Match> matches) {
+    if (!mounted) return;
+    final assets = <String>{
+      for (final m in matches)
+        for (final name in [m.localName, m.visitorName])
+          if (name != null && teamLogoAsset(name) != null) teamLogoAsset(name)!,
+    };
+    for (final a in assets) {
+      precacheImage(AssetImage(a), context);
+    }
   }
 
   Widget _fixLogo(String? logoUrl, String name, bool isUs) {
