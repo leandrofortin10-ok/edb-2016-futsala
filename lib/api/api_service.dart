@@ -1,87 +1,251 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
+import '../models/category_config.dart';
 
 class ApiService {
   static const _base         = 'https://api.weball.me/public-v2';
   static const _tournamentId = 566;
-  static const _phaseId      = 1392; // CLAUSURA (Apertura era 942)
-  static const _groupId      = 2145;
+  // Fase CLAUSURA 2026 (la Apertura era 942).
+  // Fases del torneo 566: GET /tournament/566/phase
+  static const _phaseId      = 1392;
+  // Grupo de la tabla del Clausura (en la Apertura era 1440). No aparece en
+  // ningun endpoint (clasification-groups devuelve []): se encontro probando
+  // ids en /phase/1392/group/{id}/clasification. En la proxima fase, poner
+  // null hasta encontrarlo y se usa el fallback en cero.
+  static const int? _groupId = 2145;
+  // Fallback mientras la tabla de una fase no este publicada: usamos la grilla
+  // de equipos del Apertura (fase 942, grupo 1440 "CATEGORIAS") con las
+  // estadisticas en cero, para mostrar la tabla vacia con una leyenda.
+  static const int _fallbackPhaseId = 942;
+  static const int _fallbackGroupId = 1440;
+
+  // true cuando la tabla mostrada es la real del Clausura; false cuando es la
+  // grilla provisoria en cero (la liga aun no publico los datos).
+  static bool get standingsPublished => _groupId != null;
   static const _instanceUUID = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
   static const _inscriptionId = 2129;
   static const _teamId       = 1464;
-  static const _categoryId   = 10;
-  static const _categoryLabel = '2016';
+  static const _ttl          = Duration(minutes: 5);
 
   static int get myInscriptionId => _inscriptionId;
 
-  // Response: [{positions: [{club:{clubInscription:{...}}, pts, pj, ...}]}]
-  static Future<List<ClasificationEntry>> fetchClasification() async {
-    final uri = Uri.parse(
-      '$_base/tournament/$_tournamentId/phase/$_phaseId/group/$_groupId/clasification'
-      '?instanceUUID=$_instanceUUID',
-    );
-    final res = await http.get(uri);
-    if (res.statusCode != 200) throw Exception('Error ${res.statusCode}');
-    // El grupo trae una tabla por categoría (2016, 2017, 2018, 2019): elegir la nuestra.
-    final List data = jsonDecode(res.body);
-    if (data.isEmpty) return [];
-    final table = data.cast<Map>().firstWhere(
-      (t) => (t['value'] as String? ?? '').startsWith(_categoryLabel),
-      orElse: () => data.first as Map,
-    );
-    final positions = table['positions'] as List? ?? [];
+  // ── Cache helpers ─────────────────────────────────────────────────────────
+
+  static Future<String?> _readCache(String key) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final body = prefs.getString('weball_$key');
+      final ts   = prefs.getInt('weball_ts_$key');
+      if (body == null || ts == null) return null;
+      final age = Duration(milliseconds: DateTime.now().millisecondsSinceEpoch - ts);
+      return age <= _ttl ? body : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> _writeCache(String key, String body) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('weball_$key', body);
+      await prefs.setInt('weball_ts_$key', DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
+  // ── Parse helpers ────────────────────────────────────────────────────────
+
+  static List<ClasificationEntry> _parseClasification(String body, CategoryConfig cat) {
+    if (cat.clasificationIndex == null) return [];
+    final decoded = jsonDecode(body);
+    if (decoded is! List) return [];
+    final List data = decoded;
+    final yearStr = '${cat.year}';
+    // Match by year string in the 'value' field (e.g. "2016 PROMOCIONALES")
+    Map? item;
+    for (final e in data) {
+      if ((e as Map)['value']?.toString().contains(yearStr) == true) {
+        item = e;
+        break;
+      }
+    }
+    item ??= (cat.clasificationIndex! < data.length ? data[cat.clasificationIndex!] as Map : null);
+    if (item == null) return [];
+    final positions = item['positions'] as List? ?? [];
     return positions
         .map((e) => ClasificationEntry.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 
-  // Response: {children:[{value:"Fecha N", matchesPlanning:[...]}]}
-  // NOTA: cada match tiene tournamentMatches[4]. tm[0] siempre es vacío.
-  // Los datos reales (score, fecha) están en tm[1] (el partido oficial que
-  // cuenta para la tabla). tm[2] y tm[3] son sub-partidos del mismo fixture.
-  static Future<List<Match>> fetchMatches() async =>
-      (await fetchAllMatches()).where((m) => m.involvesInscription(_inscriptionId)).toList();
+  /// [onlyOurs] = false devuelve los partidos de todos los equipos (resultados por fecha).
+  static List<Match> _parseMatches(String body, CategoryConfig cat, {bool onlyOurs = true}) {
+    final vizData  = jsonDecode(body) as Map<String, dynamic>;
+    final children = vizData['children'] as List? ?? [];
+    final yearStr  = cat.year.toString();
+    final allMatches = <Match>[];
+    for (final child in children) {
+      final c = child as Map<String, dynamic>;
+      final label           = c['value'] as String?;
+      final matchesPlanning = c['matchesPlanning'] as List? ?? [];
+      for (final m in matchesPlanning) {
+        final match = Match.fromJson(m as Map<String, dynamic>, fechaLabel: label, categoryId: cat.categoryId);
+        if (onlyOurs && !match.involvesInscription(_inscriptionId)) continue;
+        // If categoryYear is known, filter by it; if null keep the match
+        if (match.categoryYear != null && match.categoryYear != yearStr) continue;
+        allMatches.add(match);
+      }
+    }
+    return allMatches;
+  }
 
-  /// Todos los partidos de la fase (todos los equipos), en orden de fecha.
-  static Future<List<Match>> fetchAllMatches() async {
+  // Jugadores que ya no forman parte del plantel: se excluyen aunque la API
+  // de weball los siga devolviendo. Comparar por nombre completo en mayusculas.
+  static const Set<String> excludedPlayers = {
+    'CAMILO LUIS LUJAN DEL BAO',
+    'GONZALO NICOLAS STAMBULSKY',
+  };
+
+  static List<Player> _parsePlayers(String body) {
+    final List data = jsonDecode(body);
+    return data
+        .map((e) => Player.fromJson(e as Map<String, dynamic>))
+        .where((p) => !excludedPlayers.contains(p.fullName.toUpperCase()))
+        .toList();
+  }
+
+  static MatchDetailData _parseMatchDetail(String body) =>
+      MatchDetailData.fromJson(jsonDecode(body) as Map<String, dynamic>);
+
+  // ── Public API ────────────────────────────────────────────────────────────
+
+  static Future<List<ClasificationEntry>> fetchClasification([CategoryConfig? cat]) async {
+    final config = cat ?? CategoryConfig.all.first;
+    final groupId = _groupId;
+    // Tabla del Clausura aun no publicada: devolvemos la grilla de equipos en
+    // cero (la UI agrega la leyenda correspondiente).
+    if (groupId == null) return _fetchZeroedStandings(config);
+
+    const cacheKey = 'clasification';
+    final cached = await _readCache(cacheKey);
+    if (cached != null) return _parseClasification(cached, config);
+
+    final uri = Uri.parse(
+      '$_base/tournament/$_tournamentId/phase/$_phaseId/group/$groupId/clasification'
+      '?instanceUUID=$_instanceUUID',
+    );
+    final res = await http.get(uri);
+    if (res.statusCode != 200) throw Exception('Error ${res.statusCode}');
+    await _writeCache(cacheKey, res.body);
+    return _parseClasification(res.body, config);
+  }
+
+  // Trae la lista de equipos de la categoria (del grupo del Apertura) y la
+  // devuelve con todas las estadisticas en cero. Preserva el orden de la API.
+  static Future<List<ClasificationEntry>> _fetchZeroedStandings(CategoryConfig config) async {
+    const cacheKey = 'clasification_fallback';
+    var body = await _readCache(cacheKey);
+    if (body == null) {
+      final uri = Uri.parse(
+        '$_base/tournament/$_tournamentId/phase/$_fallbackPhaseId/group/$_fallbackGroupId/clasification'
+        '?instanceUUID=$_instanceUUID',
+      );
+      final res = await http.get(uri);
+      if (res.statusCode != 200) return [];
+      body = res.body;
+      await _writeCache(cacheKey, body);
+    }
+    return _zeroStandings(_parseClasification(body, config));
+  }
+
+  // Devuelve las mismas entradas con todas las estadisticas en cero.
+  static List<ClasificationEntry> _zeroStandings(List<ClasificationEntry> src) => src
+      .map((e) => ClasificationEntry(
+            inscriptionId:   e.inscriptionId,
+            inscriptionName: e.inscriptionName,
+            logo:            e.logo,
+            pts: 0, pj: 0, pg: 0, pe: 0, pp: 0, gf: 0, gc: 0, dg: 0,
+          ))
+      .toList();
+
+  static Future<List<Match>> fetchMatches([CategoryConfig? cat]) async =>
+      _parseMatches(await _fetchVisualizer(), cat ?? CategoryConfig.all.first);
+
+  /// Partidos de todos los equipos de la categoría. Misma respuesta (y caché)
+  /// que fetchMatches: no genera requests extra.
+  static Future<List<Match>> fetchAllMatches([CategoryConfig? cat]) async =>
+      _parseMatches(await _fetchVisualizer(), cat ?? CategoryConfig.all.first, onlyOurs: false);
+
+  static Future<String> _fetchVisualizer() async {
+    const cacheKey = 'matches';
+    final cached = await _readCache(cacheKey);
+    if (cached != null) return cached;
+
     final uri = Uri.parse(
       '$_base/tournament/$_tournamentId/phase/$_phaseId/visualizer'
       '?instanceUUID=$_instanceUUID',
     );
     final res = await http.get(uri);
     if (res.statusCode != 200) throw Exception('Error ${res.statusCode}');
-
-    final vizData = jsonDecode(res.body) as Map<String, dynamic>;
-    final children = vizData['children'] as List? ?? [];
-
-    final allMatches = <Match>[];
-    for (final child in children) {
-      final c = child as Map<String, dynamic>;
-      final label = c['value'] as String?;
-      final matchesPlanning = c['matchesPlanning'] as List? ?? [];
-      for (final m in matchesPlanning) {
-        allMatches.add(Match.fromJson(m as Map<String, dynamic>, fechaLabel: label));
-      }
-    }
-    return allMatches;
+    await _writeCache(cacheKey, res.body);
+    return res.body;
   }
 
   static Future<MatchDetailData> fetchMatchDetail(int tournamentMatchId) async {
+    final key    = 'match_$tournamentMatchId';
+    final cached = await _readCache(key);
+    if (cached != null) return _parseMatchDetail(cached);
+
     final uri = Uri.parse('$_base/matches/$tournamentMatchId');
     final res = await http.get(uri);
     if (res.statusCode != 200) throw Exception('Error ${res.statusCode}');
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
-    return MatchDetailData.fromJson(data);
+    await _writeCache(key, res.body);
+    return _parseMatchDetail(res.body);
   }
 
-  static Future<List<Player>> fetchPlayers() async {
+  static Future<List<Player>> fetchPlayers([CategoryConfig? cat]) async {
+    final config = cat ?? CategoryConfig.all.first;
+    final cacheKey = 'players_${config.categoryId}';
+    final cached = await _readCache(cacheKey);
+    if (cached != null) return _parsePlayers(cached);
+
     final uri = Uri.parse(
-      '$_base/team/$_teamId/inscription/$_inscriptionId/category/$_categoryId/player',
+      '$_base/team/$_teamId/inscription/$_inscriptionId/category/${config.categoryId}/player',
     );
     final res = await http.get(uri);
     if (res.statusCode != 200) return [];
-    final List data = jsonDecode(res.body);
-    return data.map((e) => Player.fromJson(e as Map<String, dynamic>)).toList();
+    await _writeCache(cacheKey, res.body);
+    return _parsePlayers(res.body);
+  }
+
+  // ── Stale snapshot ────────────────────────────────────────────────────────
+
+  static Future<({
+    List<ClasificationEntry> standings,
+    List<Match>              matches,
+    List<Match>              allMatches,
+    List<Player>             players,
+  })?> loadStaleSnapshot([CategoryConfig? cat]) async {
+    final config = cat ?? CategoryConfig.all.first;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final mtch = prefs.getString('weball_matches');
+      if (mtch == null) return null;
+      // Tabla real (Clausura) o grilla en cero (fallback) segun este publicada.
+      final clsKey = _groupId == null ? 'weball_clasification_fallback' : 'weball_clasification';
+      final cls  = prefs.getString(clsKey);
+      final plyr = prefs.getString('weball_players_${config.categoryId}');
+      final staleStandings = cls == null
+          ? <ClasificationEntry>[]
+          : (_groupId == null ? _zeroStandings(_parseClasification(cls, config)) : _parseClasification(cls, config));
+      return (
+        standings: staleStandings,
+        matches:   _parseMatches(mtch, config),
+        allMatches: _parseMatches(mtch, config, onlyOurs: false),
+        players:   plyr != null ? _parsePlayers(plyr) : <Player>[],
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }

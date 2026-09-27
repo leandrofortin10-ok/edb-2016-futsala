@@ -11,7 +11,11 @@ const admin = require('firebase-admin');
 const MY_INSCRIPTION_ID = 2129;
 const BASE              = 'https://api.weball.me/public-v2';
 const TOURNAMENT_ID     = 566;
-const PHASE_ID          = 1392; // CLAUSURA (Apertura era 942)
+// Fase CLAUSURA 2026 (la Apertura era 942). Ver: GET /tournament/566/phase
+const PHASE_ID          = 1392;
+// Grupo de la tabla del Clausura (en la Apertura era 1440). No aparece en
+// ningún endpoint: se encontró probando ids en /phase/1392/group/{id}/clasification.
+// null = tabla no publicada (no se notifican cambios de posición).
 const GROUP_ID          = 2145;
 const INSTANCE_UUID     = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
 const TEAM_ID           = 1464;
@@ -74,14 +78,13 @@ async function fetchMatches() {
       const awayId = toInt(awayCi?.id);
       if (homeId !== MY_INSCRIPTION_ID && awayId !== MY_INSCRIPTION_ID) continue;
 
-      // El primer tournamentMatch con datos reales (tm[0] siempre es vacío en esta API)
-      let tmReal = null;
-      for (const tm of (m.tournamentMatches || [])) {
-        if (tm?.matchInfo?.dateTime != null || tm?.scoreHome != null) {
-          tmReal = tm;
-          break;
-        }
-      }
+      // Cada partido trae un tournamentMatch por categoría (2016..2019) en orden
+      // variable: tomar el de la nuestra; si no está, el primero con datos reales.
+      const tms = m.tournamentMatches || [];
+      const tmReal =
+        tms.find((tm) => toInt(tm?.category?.categoryInstance?.id) === CATEGORY_ID) ||
+        tms.find((tm) => tm?.matchInfo?.dateTime != null || tm?.scoreHome != null) ||
+        null;
 
       const { date, time } = parseDateTime(m.dateTime || tmReal?.matchInfo?.dateTime);
 
@@ -104,6 +107,9 @@ async function fetchMatches() {
 }
 
 async function fetchStandings() {
+  // Sin grupo de clasificacion no hay tabla: se omiten las notificaciones
+  // de cambio de posicion hasta que la organizacion la publique.
+  if (GROUP_ID == null) return [];
   const data = await fetchJson(
     `${BASE}/tournament/${TOURNAMENT_ID}/phase/${PHASE_ID}/group/${GROUP_ID}/clasification?instanceUUID=${INSTANCE_UUID}`,
   );
@@ -288,7 +294,10 @@ async function main() {
         rivalName: rival,
       };
     }),
-    position:  newPos || savedPos,
+    // Sin tabla no hay posicion que guardar: se resetea a 0 para que, cuando
+    // la publiquen, la primera corrida solo siembre el estado sin notificar
+    // un salto de puesto heredado de otra fase.
+    position:  standings.length > 0 ? (newPos || savedPos) : 0,
     phaseId:   PHASE_ID,
     players:   [...newPlayerSet],
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),

@@ -1,7 +1,7 @@
-import 'dart:io';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -129,7 +129,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
   Widget _buildScrollBody(Color resultColor, bool played) {
     return StreamBuilder<List<MatchMedia>>(
-      stream: MediaService.watchMatchMedia(m.id.toString()),
+      stream: MediaService.watchMatchMedia(m.tournamentMatchId.toString()),
       builder: (context, snapshot) {
         final items = snapshot.data ?? [];
         final loading = snapshot.connectionState == ConnectionState.waiting;
@@ -540,7 +540,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
 
   void _openSpreadsheetViewer(int initialIndex) {
     final items = m.spreadsheetPhotos
-        .map((url) => MatchMedia(id: url, matchId: m.id.toString(), url: url, type: MediaType.image, uploadedAt: DateTime.now()))
+        .map((url) => MatchMedia(id: url, matchId: m.tournamentMatchId.toString(), url: url, type: MediaType.image, uploadedAt: DateTime.now()))
         .toList();
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -839,25 +839,25 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
   }
 
   Future<void> _pickAndUpload(ImageSource source, MediaType type) async {
-    final picker = ImagePicker();
-    XFile? picked;
-    if (type == MediaType.image) {
-      picked = await picker.pickImage(source: source, imageQuality: 80);
-    } else {
-      picked = await picker.pickVideo(
-          source: source,
-          maxDuration: const Duration(minutes: 5));
-    }
-    if (picked == null || !mounted) return;
-
-    setState(() {
-      _uploading = true;
-      _uploadProgress = 0;
-    });
     try {
+      final picker = ImagePicker();
+      XFile? picked;
+      if (type == MediaType.image) {
+        picked = await picker.pickImage(source: source, imageQuality: kIsWeb ? null : 80);
+      } else {
+        picked = await picker.pickVideo(
+            source: source,
+            maxDuration: const Duration(minutes: 5));
+      }
+      if (picked == null || !mounted) return;
+
+      setState(() {
+        _uploading = true;
+        _uploadProgress = 0;
+      });
       await MediaService.uploadMedia(
-        m.id.toString(),
-        File(picked.path),
+        m.tournamentMatchId.toString(),
+        picked,
         type,
         onProgress: (p) {
           if (mounted) setState(() => _uploadProgress = p);
@@ -866,8 +866,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Error al subir el archivo. Intentá de nuevo.'),
+          SnackBar(
+              content: Text('Error: $e'),
               backgroundColor: _kRed),
         );
       }

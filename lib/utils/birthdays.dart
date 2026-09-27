@@ -9,6 +9,7 @@ const birthdays = <String, (int, int)>{
   'OLMO':       (8, 7),   // Agustín – 7 ago
   'STAMBULSKY': (8, 24),  // Gonzalo/Pipi – 24 ago
   'GAMON':      (8, 25),  // Uri – 25 ago
+  'TRINIDAD':   (9, 14),  // Iván – 14 sep
   'FLEITAS':    (9, 20),  // Tatu – 20 sep
 };
 

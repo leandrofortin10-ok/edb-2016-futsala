@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../api/api_service.dart';
+import '../models/category_config.dart';
 import '../models/models.dart';
 import '../services/background_sync.dart';
 import '../services/debug_overrides.dart';
@@ -40,6 +41,7 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  CategoryConfig _selectedCategory = CategoryConfig.all.first;
   List<ClasificationEntry> _standings = [];
   List<Match> _matches = [];      // solo los de Estrella
   List<Match> _allMatches = [];   // todos los equipos (resultados por fecha)
@@ -74,6 +76,20 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  void _switchCategory(CategoryConfig cat) {
+    if (_selectedCategory.year == cat.year) return;
+    setState(() {
+      _selectedCategory = cat;
+      _standings    = [];
+      _matches      = [];
+      _allMatches   = [];
+      _players      = [];
+      _matchDetails = {};
+      _loading      = true;
+    });
+    _loadAll();
+  }
+
   Future<void> _enableNotifications() async {
     await initNotifications();
     await showNotification(
@@ -84,21 +100,48 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadAll() async {
-    setState(() { _loading = true; _error = null; });
+    if (mounted) setState(() => _error = null);
+
+    final cat = _selectedCategory;
+
+    // Fase 1: mostrar datos guardados instantáneamente (stale-while-revalidate)
+    if (_standings.isEmpty) {
+      final stale = await ApiService.loadStaleSnapshot(cat);
+      if (stale != null && mounted) {
+        setState(() {
+          _standings = stale.standings;
+          _matches   = stale.matches;
+          _allMatches = stale.allMatches;
+          final fechas = _fechaLabels(stale.allMatches);
+          if (_selectedFecha == null || !fechas.contains(_selectedFecha)) {
+            _selectedFecha = _defaultFecha(stale.allMatches, fechas);
+          }
+          _players   = stale.players;
+          _loading   = false;
+        });
+      }
+    }
+
+    // Fase 2: traer datos frescos (desde cache si TTL vigente, si no desde red)
+    // Solo muestra spinner si todavía no tenemos nada que mostrar
+    if (_standings.isEmpty && mounted) setState(() => _loading = true);
+
     try {
       final results = await Future.wait([
-        ApiService.fetchClasification(),
-        ApiService.fetchAllMatches(),
-        ApiService.fetchPlayers(),
+        ApiService.fetchClasification(cat),
+        ApiService.fetchAllMatches(cat),
+        ApiService.fetchPlayers(cat),
       ]);
       final standings  = results[0] as List<ClasificationEntry>;
       final allMatches = results[1] as List<Match>;
       final players    = results[2] as List<Player>;
       final matches    = allMatches.where((m) => m.involvesInscription(_myInscriptionId)).toList();
-      // Verificar cambios con datos ya cargados (sin doble llamada a API).
+      // Notificar cambios solo para la categoría principal.
       // Sin await: una notificación trabada no debe bloquear la carga de la pantalla.
-      unawaited(checkForChanges(matches: matches, standings: standings, players: players)
-          .catchError((_) {}));
+      if (cat.year == CategoryConfig.all.first.year) {
+        unawaited(checkForChanges(matches: matches, standings: standings, players: players)
+            .catchError((_) {}));
+      }
 
       // Fetch details for played matches (to get scorer/card data)
       final played = matches.where((m) => m.hasResult && m.tournamentMatchId != 0).toList();
@@ -111,10 +154,10 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       // Cargar clima ANTES de limpiar overrides
-      final next = matches.firstWhere((m) => !_isPast(m), orElse: () => matches.last);
-      final weatherDate = DebugOverrides.nextMatchDate ?? next.date;
+      final next = _nextMatch(matches);
+      final weatherDate = DebugOverrides.nextMatchDate ?? next?.date;
       final weatherTime = DebugOverrides.nextMatchDate != null
-          ? DebugOverrides.nextMatchTime : next.time;
+          ? DebugOverrides.nextMatchTime : next?.time;
       DebugOverrides.clear();
       WeatherInfo? weather;
       if (weatherDate != null) {
@@ -138,7 +181,11 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       _precacheFixtureLogos(allMatches);
     } catch (e) {
-      setState(() { _loading = false; _error = e.toString(); });
+      if (mounted) setState(() {
+        _loading = false;
+        // Solo mostrar error si no tenemos datos previos que mostrar
+        if (_standings.isEmpty) _error = e.toString();
+      });
     }
   }
 
@@ -283,13 +330,46 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildCategorySelector() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Wrap(
+        spacing: 8,
+        children: CategoryConfig.all.map((cat) {
+          final selected = cat.year == _selectedCategory.year;
+          return GestureDetector(
+            onTap: () => _switchCategory(cat),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: selected ? _kBlue : Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: selected ? _kBlue : _kBorder),
+              ),
+              child: Text(
+                cat.label,
+                style: TextStyle(
+                  color: selected ? Colors.white : _kMuted,
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildBodyMobile() {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
       cacheExtent: 2000,
       children: [
         _buildBannerImage(),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
+        _buildCategorySelector(),
+        const SizedBox(height: 8),
         RepaintBoundary(child: _buildNextMatch()),
         const SizedBox(height: 12),
         RepaintBoundary(child: _buildQuickStats()),
@@ -325,7 +405,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _buildBannerImage(),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
+                      _buildCategorySelector(),
+                      const SizedBox(height: 8),
                       RepaintBoundary(child: _buildNextMatch()),
                       const SizedBox(height: 12),
                       RepaintBoundary(child: _buildQuickStats()),
@@ -383,7 +465,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_matches.isEmpty) {
       return _emptyCard('Sin partidos encontrados');
     }
-    final next = _matches.firstWhere((m) => !_isPast(m), orElse: () => _matches.last);
+    final next = _nextMatch() ?? _matches.last;
     final isHome = next.localInscriptionId == _myInscriptionId;
     final played = next.hasResult;
     // Apply debug overrides for date/time
@@ -574,8 +656,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Countdown al próximo partido.
   Widget _buildCountdown() {
-    final next = _matches.cast<Match?>().firstWhere(
-        (m) => !_isPast(m!), orElse: () => null);
+    final next = _nextMatch();
     if (next == null || next.date == null) {
       return Container(
         padding: const EdgeInsets.all(12),
@@ -737,8 +818,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Próximo partido
-    final next = _matches.cast<Match?>().firstWhere(
-        (m) => !_isPast(m!), orElse: () => null);
+    final next = _nextMatch();
     String nextMatch = '';
     if (next != null) {
       nextMatch = '${next.localName} vs ${next.visitorName}';
@@ -752,7 +832,7 @@ class _HomeScreenState extends State<HomeScreen> {
         : '?';
 
     final lines = <String>[
-      'Estrella de Boedo · Cat. 2016',
+      'Estrella de Boedo · ${_selectedCategory.label}',
     ];
     if (lastResult.isNotEmpty) lines.add('Último: $lastResult');
     if (nextMatch.isNotEmpty) lines.add('Próximo: $nextMatch');
@@ -867,18 +947,23 @@ class _HomeScreenState extends State<HomeScreen> {
   // ── Tabla de posiciones ────────────────────────────────────────────────────
   Widget _buildStandings() {
     if (_standings.isEmpty) return _emptyCard('Sin datos de tabla');
-    var sorted = [..._standings]..sort((a, b) {
-      final c = b.pts.compareTo(a.pts);
-      return c != 0 ? c : b.dg.compareTo(a.dg);
-    });
-    // Aplicar override de posición visual
-    final posOverride = DebugOverrides.myTablePosition;
-    if (posOverride != null) {
-      final idx = sorted.indexWhere((e) => e.inscriptionId == _myInscriptionId);
-      if (idx >= 0) {
-        final entry = sorted.removeAt(idx);
-        final target = (posOverride - 1).clamp(0, sorted.length);
-        sorted.insert(target, entry);
+    final published = ApiService.standingsPublished;
+    var sorted = [..._standings];
+    // Con la tabla en cero (aun no publicada) preservamos el orden de la API.
+    if (published) {
+      sorted.sort((a, b) {
+        final c = b.pts.compareTo(a.pts);
+        return c != 0 ? c : b.dg.compareTo(a.dg);
+      });
+      // Aplicar override de posición visual
+      final posOverride = DebugOverrides.myTablePosition;
+      if (posOverride != null) {
+        final idx = sorted.indexWhere((e) => e.inscriptionId == _myInscriptionId);
+        if (idx >= 0) {
+          final entry = sorted.removeAt(idx);
+          final target = (posOverride - 1).clamp(0, sorted.length);
+          sorted.insert(target, entry);
+        }
       }
     }
     return Container(
@@ -906,10 +991,35 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           ...sorted.asMap().entries.map((e) => _standingsRow(e.key + 1, e.value, e.key == sorted.length - 1)),
+          if (!published) _standingsLegend(),
         ],
       ),
     );
   }
+
+  // Leyenda cuando la tabla se muestra en cero porque la liga aun no publico
+  // los datos del Clausura.
+  Widget _standingsLegend() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
+    decoration: const BoxDecoration(
+      color: _kSurface2,
+      border: Border(top: BorderSide(color: _kBorder, width: 0.5)),
+      borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
+    ),
+    child: const Row(
+      children: [
+        Icon(Icons.info_outline, size: 13, color: _kMuted),
+        SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'La liga aún no publicó la tabla del Clausura.',
+            style: TextStyle(color: _kMuted, fontSize: 11, fontStyle: FontStyle.italic),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _standingsRow(int pos, ClasificationEntry e, bool isLast) {
     final isUs = e.inscriptionId == _myInscriptionId;
@@ -1680,6 +1790,17 @@ class _HomeScreenState extends State<HomeScreen> {
     if (d == null) return false;
     final today = DateTime.now();
     return d.isBefore(DateTime(today.year, today.month, today.day));
+  }
+
+  /// Próximo partido: el no jugado con la fecha confirmada más cercana. Los que
+  /// no tienen fecha (a confirmar / suspendidos) no cuentan como próximo, salvo
+  /// que ninguno tenga fecha; en ese caso se usa el primero del fixture.
+  Match? _nextMatch([List<Match>? source]) {
+    final upcoming = (source ?? _matches).where((m) => !_isPast(m)).toList();
+    if (upcoming.isEmpty) return null;
+    final dated = upcoming.where((m) => m.date != null).toList()
+      ..sort((a, b) => a.date!.compareTo(b.date!));
+    return dated.isNotEmpty ? dated.first : upcoming.first;
   }
 
   String _initials(String name) {

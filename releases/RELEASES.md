@@ -4,6 +4,24 @@ Los APKs se guardan en `releases/` con el nombre `edb-cat2016-vX.Y.Z.apk`.
 
 ---
 
+## v1.7.0 — 2026-08-19
+
+**Web:** https://edb-estrella.web.app (sin APK — el build de Android no compila, ver README)
+
+### Cambios
+- **Cambio de torneo: Apertura → Clausura 2026.** La app seguía mostrando la fase 942 (Apertura);
+  ahora apunta a la fase 1392 (Clausura) del mismo torneo 566. Actualizado tanto en el cliente
+  Flutter como en el script de notificaciones de GitHub Actions
+- La tabla de posiciones queda vacía ("Sin datos de tabla") porque la organización todavía no
+  publicó el grupo de clasificación del Clausura. Se omiten las notificaciones de cambio de puesto
+  hasta entonces, y la posición guardada se resetea para no notificar un salto heredado de la Apertura
+- Fix: el parseo de la tabla toleraba mal una respuesta que no fuera una lista (la API devuelve
+  `null` cuando el grupo no existe), lo que rompía la pantalla con un error de tipo
+- Fix: el render instantáneo desde caché (stale-while-revalidate) exigía tener la tabla cacheada;
+  sin ella no se mostraban los partidos guardados. Ahora solo depende de la caché de partidos
+
+---
+
 ## v1.6.0 — 2026-03-22
 
 **APK:** `releases/edb-cat2016-v1.6.0.apk`

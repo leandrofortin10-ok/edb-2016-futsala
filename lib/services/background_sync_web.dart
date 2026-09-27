@@ -135,7 +135,9 @@ Future<void> _checkForChanges({
   final savedPlayersJson = prefs.getString('last_players');
 
   if (savedPlayersJson != null) {
-    final oldNames = (jsonDecode(savedPlayersJson) as List).cast<String>().toSet();
+    final oldNames = (jsonDecode(savedPlayersJson) as List).cast<String>().toSet()
+      // No avisar "jugador salió" por los que ocultamos a proposito.
+      ..removeWhere((n) => ApiService.excludedPlayers.contains(n.toUpperCase()));
     for (final name in newNames.difference(oldNames)) {
       await showNotification('👤 Nuevo jugador en el plantel', name);
     }
