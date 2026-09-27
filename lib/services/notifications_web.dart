@@ -6,6 +6,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 const _vapidKey =
     'BCKqChkY1vAgc9-9oBNw0Ag6uaayB744ZAl2wY43uKSU1UTAMnUhFSy19yiewT-vAzoPqWHmJZBzLdkqYRBszGY';
 
+// Scope donde firebase_messaging registra firebase-messaging-sw.js
+const _fcmSwScope = '/firebase-cloud-messaging-push-scope';
+
 String get notifPermission => html.Notification.permission ?? 'default';
 
 Future<void> initNotifications() async {
@@ -46,15 +49,20 @@ Future<void> showNotification(String title, String body) async {
     if (permission == 'denied') return;
 
     if (permission != 'granted') {
-      final result = await html.Notification.requestPermission();
+      final result = await html.Notification.requestPermission()
+          .timeout(const Duration(seconds: 5), onTimeout: () => 'default');
       if (result != 'granted') return;
     }
 
-    // Chrome Android requiere ServiceWorker — intentamos primero, fallback a Notification directa
+    // Chrome Android requiere ServiceWorker — intentamos primero, fallback a Notification directa.
+    // NO usar serviceWorker.ready: la página no tiene SW propio (index.html los desregistra)
+    // y el de FCM vive en otro scope, así que `ready` nunca resuelve y cuelga la app.
     try {
-      final sw = await html.window.navigator.serviceWorker?.ready;
+      final sw = await html.window.navigator.serviceWorker
+          ?.getRegistration(_fcmSwScope)
+          .timeout(const Duration(seconds: 3));
       if (sw != null) {
-        await sw.showNotification(title, {'body': body});
+        await sw.showNotification(title, {'body': body, 'icon': '/icons/Icon-192.png'});
         return;
       }
     } catch (_) {}

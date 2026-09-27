@@ -91,8 +91,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final standings = results[0] as List<ClasificationEntry>;
       final matches   = results[1] as List<Match>;
       final players   = results[2] as List<Player>;
-      // Verificar cambios con datos ya cargados (sin doble llamada a API)
-      await checkForChanges(matches: matches, standings: standings, players: players);
+      // Verificar cambios con datos ya cargados (sin doble llamada a API).
+      // Sin await: una notificación trabada no debe bloquear la carga de la pantalla.
+      unawaited(checkForChanges(matches: matches, standings: standings, players: players)
+          .catchError((_) {}));
 
       // Fetch details for played matches (to get scorer/card data)
       final played = matches.where((m) => m.hasResult && m.tournamentMatchId != 0).toList();

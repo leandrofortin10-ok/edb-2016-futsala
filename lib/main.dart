@@ -13,7 +13,6 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await AuthService.initialize();
   await initNotifications();
-  await seedTestStateOnce();
   await initBackgroundSync();
   runApp(const EstrellaApp());
 }
