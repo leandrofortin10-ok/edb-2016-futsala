@@ -11,8 +11,8 @@ const admin = require('firebase-admin');
 const MY_INSCRIPTION_ID = 2129;
 const BASE              = 'https://api.weball.me/public-v2';
 const TOURNAMENT_ID     = 566;
-const PHASE_ID          = 942;
-const GROUP_ID          = 1440;
+const PHASE_ID          = 1392; // CLAUSURA (Apertura era 942)
+const GROUP_ID          = 2145;
 const INSTANCE_UUID     = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
 const TEAM_ID           = 1464;
 const CATEGORY_ID       = 10;
@@ -107,7 +107,9 @@ async function fetchStandings() {
   const data = await fetchJson(
     `${BASE}/tournament/${TOURNAMENT_ID}/phase/${PHASE_ID}/group/${GROUP_ID}/clasification?instanceUUID=${INSTANCE_UUID}`,
   );
-  return (data[0]?.positions || []).map((p) => ({
+  // El grupo trae una tabla por categoría (2016, 2017, ...): elegir la nuestra.
+  const table = data.find((t) => (t.value || '').startsWith('2016')) || data[0];
+  return (table?.positions || []).map((p) => ({
     inscriptionId: toInt(p.club?.clubInscription?.id),
     pts:           toInt(p.pts) ?? 0,
     dg:            toInt(p.dg)  ?? 0,
@@ -240,7 +242,9 @@ async function main() {
     return c !== 0 ? c : b.dg - a.dg;
   });
   const newPos      = sorted.findIndex((e) => e.inscriptionId === MY_INSCRIPTION_ID) + 1;
-  const savedPos    = state.position || 0;
+  // Si cambió la fase del torneo (ej. Apertura → Clausura), la posición guardada
+  // es de otra tabla: descartarla para no notificar un "cambio" falso.
+  const savedPos    = state.phaseId === PHASE_ID ? (state.position || 0) : 0;
   if (savedPos > 0 && newPos > 0 && newPos !== savedPos) {
     const emoji = newPos < savedPos ? '📈' : '📉';
     notifications.push({
@@ -285,6 +289,7 @@ async function main() {
       };
     }),
     position:  newPos || savedPos,
+    phaseId:   PHASE_ID,
     players:   [...newPlayerSet],
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });

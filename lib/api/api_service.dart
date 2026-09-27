@@ -5,12 +5,13 @@ import '../models/models.dart';
 class ApiService {
   static const _base         = 'https://api.weball.me/public-v2';
   static const _tournamentId = 566;
-  static const _phaseId      = 942;
-  static const _groupId      = 1440;
+  static const _phaseId      = 1392; // CLAUSURA (Apertura era 942)
+  static const _groupId      = 2145;
   static const _instanceUUID = '2d260df1-7986-49fd-95a2-fcb046e7a4fb';
   static const _inscriptionId = 2129;
   static const _teamId       = 1464;
   static const _categoryId   = 10;
+  static const _categoryLabel = '2016';
 
   static int get myInscriptionId => _inscriptionId;
 
@@ -22,8 +23,14 @@ class ApiService {
     );
     final res = await http.get(uri);
     if (res.statusCode != 200) throw Exception('Error ${res.statusCode}');
+    // El grupo trae una tabla por categoría (2016, 2017, 2018, 2019): elegir la nuestra.
     final List data = jsonDecode(res.body);
-    final positions = (data.first as Map)['positions'] as List? ?? [];
+    if (data.isEmpty) return [];
+    final table = data.cast<Map>().firstWhere(
+      (t) => (t['value'] as String? ?? '').startsWith(_categoryLabel),
+      orElse: () => data.first as Map,
+    );
+    final positions = table['positions'] as List? ?? [];
     return positions
         .map((e) => ClasificationEntry.fromJson(e as Map<String, dynamic>))
         .toList();

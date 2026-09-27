@@ -33,9 +33,11 @@ class ClasificationEntry {
   // Response structure: positions[].club.clubInscription + stats at position level
   factory ClasificationEntry.fromJson(Map<String, dynamic> j) {
     final ci = (j['club'] as Map?)?['clubInscription'] as Map? ?? {};
+    // Cupos sin club asignado (vacancy) solo traen el nombre en labelTablePosition
+    final label = j['labelTablePosition'] as Map?;
     return ClasificationEntry(
       inscriptionId:   _parseInt(ci['id']),
-      inscriptionName: ci['tableName'] as String? ?? ci['name'] as String?,
+      inscriptionName: ci['tableName'] as String? ?? ci['name'] as String? ?? label?['name'] as String?,
       logo:            ci['logo'] as String?,
       pts: _parseIntOrZero(j['pts']),
       pj:  _parseIntOrZero(j['pj']),
