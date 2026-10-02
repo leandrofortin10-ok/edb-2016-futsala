@@ -20,6 +20,9 @@ sed -i "s|main.dart.js|${NEWNAME}|g" build/web/flutter_bootstrap.js
 
 echo "  Renamed to ${NEWNAME}"
 
+echo "=== Versionando assets ==="
+scripts/version_assets.sh build/web "$(git rev-parse --short=7 HEAD)"
+
 echo "=== Deploying to Firebase ==="
 npx firebase deploy --only hosting
 

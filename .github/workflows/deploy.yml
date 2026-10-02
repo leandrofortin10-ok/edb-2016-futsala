@@ -23,6 +23,12 @@ jobs:
       - name: Build web
         run: flutter build web --release
 
+      # Assets en una carpeta por versión (v/<commit>/assets): cada deploy usa
+      # URLs nuevas y el navegador no reutiliza archivos de builds anteriores
+      # (por ejemplo, la fuente de íconos sin los íconos nuevos).
+      - name: Versionar assets
+        run: scripts/version_assets.sh build/web "${GITHUB_SHA::7}"
+
       # Push a dev → canal preview (misma URL siempre: edb-estrella--dev-xxx.web.app)
       - name: Deploy a canal dev
         if: github.ref == 'refs/heads/dev'

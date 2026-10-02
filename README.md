@@ -70,6 +70,10 @@ flutter build web --release
 Deploy manual (build + cache-busting + Firebase): `scripts/deploy.sh`.
 En CI, `.github/workflows/deploy.yml` publica `dev` → canal preview y `master` → producción.
 
+Ambos deploys mueven los assets a `v/<commit>/assets` (`scripts/version_assets.sh`): Flutter genera
+archivos con el mismo nombre en cada build (por ejemplo la fuente de íconos recortada) y, sin
+versionar, el navegador seguía usando los de builds anteriores.
+
 ## Notificaciones push
 
 `.github/workflows/push_notifications.yml` corre `check_and_notify.js` cada hora: compara la API
