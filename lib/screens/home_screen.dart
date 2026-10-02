@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../api/api_service.dart';
 import '../models/category_config.dart';
+import '../models/match_preview.dart';
 import '../models/models.dart';
 import '../services/background_sync.dart';
 import '../services/debug_overrides.dart';
 import '../services/notifications.dart';
+import '../services/preview_service.dart';
 import '../services/weather_service.dart';
 import '../utils/birthdays.dart';
 import '../utils/team_logos.dart';
@@ -54,6 +56,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _refreshTimer;
   WeatherInfo? _weather;
   bool _showNotifBanner = false;
+  // Stream de la previa del próximo partido; se recrea solo si cambia el
+  // partido o la categoría para no resuscribirse en cada rebuild.
+  String? _previewKey;
+  Stream<MatchPreview?>? _previewStream;
 
   @override
   void initState() {
@@ -371,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _buildCategorySelector(),
         const SizedBox(height: 8),
         RepaintBoundary(child: _buildNextMatch()),
+        RepaintBoundary(child: _buildPreview()),
         const SizedBox(height: 12),
         RepaintBoundary(child: _buildQuickStats()),
         const SizedBox(height: 28),
@@ -409,6 +416,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildCategorySelector(),
                       const SizedBox(height: 8),
                       RepaintBoundary(child: _buildNextMatch()),
+                      RepaintBoundary(child: _buildPreview()),
                       const SizedBox(height: 12),
                       RepaintBoundary(child: _buildQuickStats()),
                       const SizedBox(height: 32),
@@ -542,6 +550,101 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  // ── Previa (IA) ────────────────────────────────────────────────────────────
+  /// Previa del próximo partido generada con IA (ver generate_previews.js).
+  /// No ocupa lugar mientras no exista: partido sin programar, previa todavía
+  /// no generada o error al leerla.
+  Widget _buildPreview() {
+    final next = _nextMatch();
+    if (next == null) return const SizedBox.shrink();
+    final key = '${next.id}_${_selectedCategory.categoryId}';
+    if (key != _previewKey) {
+      _previewKey = key;
+      _previewStream = PreviewService.watchPreview(next.id, _selectedCategory.categoryId);
+    }
+    return StreamBuilder<MatchPreview?>(
+      stream: _previewStream,
+      builder: (context, snapshot) {
+        final preview = snapshot.data;
+        if (preview == null) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _kSurface,
+              border: Border.all(color: _kBorder),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.auto_awesome, size: 13, color: _kBlue),
+                    SizedBox(width: 6),
+                    Text('PREVIA',
+                        style: TextStyle(color: _kBlue, fontSize: 10,
+                            fontWeight: FontWeight.w700, letterSpacing: 1.2)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(preview.text,
+                    style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.5)),
+                if (preview.mapsUrl != null) ...[
+                  const SizedBox(height: 14),
+                  _buildDirectionsButton(preview.mapsUrl!),
+                ],
+                const SizedBox(height: 12),
+                Text(
+                  preview.generatedAt != null
+                      ? 'Generado con IA · actualizado ${_formatDateTime(preview.generatedAt!)}'
+                      : 'Generado con IA',
+                  style: const TextStyle(color: _kMuted, fontSize: 10),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDirectionsButton(String mapsUrl) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          if (kIsWeb) html.window.open(mapsUrl, '_blank');
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: _kBlue.withOpacity(0.1),
+            border: Border.all(color: _kBlue.withOpacity(0.3)),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.place, color: _kBlue, size: 16),
+              SizedBox(width: 8),
+              Text('Cómo llegar',
+                  style: TextStyle(color: _kBlue, fontSize: 12, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final local = dt.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(local.day)}/${two(local.month)} ${two(local.hour)}:${two(local.minute)}';
   }
 
   // ── Quick Stats (racha + countdown + stats + compartir) ────────────────────

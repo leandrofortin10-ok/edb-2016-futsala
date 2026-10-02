@@ -15,6 +15,13 @@ service cloud.firestore {
       allow read: if false;
     }
 
+    // ai_previews: previas generadas con IA por GitHub Actions (Admin SDK).
+    // Lectura para usuarios logueados; nadie escribe desde la app.
+    match /ai_previews/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // app_state: solo acceso por Admin SDK (GitHub Actions)
     match /app_state/{doc} {
       allow read, write: if false;

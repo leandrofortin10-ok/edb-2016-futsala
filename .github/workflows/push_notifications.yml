@@ -26,3 +26,15 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node check_and_notify.js
         working-directory: .github/scripts
+
+      # Previa del próximo partido con Gemini (tier gratuito). Corre aunque el
+      # paso anterior falle; sin el secret GEMINI_API_KEY no hace nada.
+      # Interruptor: solo corre con la variable del repo PREVIEWS_ENABLED=true
+      # (mientras tanto se prueba con test_previews.yml en dev).
+      - name: Generar previas
+        if: ${{ !cancelled() && vars.PREVIEWS_ENABLED == 'true' }}
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node generate_previews.js
+        working-directory: .github/scripts

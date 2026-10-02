@@ -1,0 +1,47 @@
+name: Test Previa (manual)
+
+# Genera la previa del próximo partido y manda el push solo al entorno elegido.
+# La previa se guarda en Firestore igual que en el job horario (la colección
+# ai_previews es la misma para dev y prod).
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 'Entorno destino del push'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - prod
+      force:
+        description: 'Regenerar y avisar aunque la previa no haya cambiado'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: .github/scripts/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+        working-directory: .github/scripts
+
+      - name: Generar previa
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TARGET_ENV: ${{ github.event.inputs.env }}
+          FORCE_PREVIEW: ${{ github.event.inputs.force }}
+        run: node generate_previews.js
+        working-directory: .github/scripts

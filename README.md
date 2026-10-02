@@ -13,6 +13,7 @@ Producción: https://edb-estrella.web.app
 - **Plantel** — lista de jugadores
 - **Galería por partido** — fotos y videos (carga y borrado restringidos a admin)
 - **Notificaciones push** — alertas ante cambios de horario, resultados, posición o plantel
+- **Previa con IA** — texto del próximo partido generado con Gemini, con botón "Cómo llegar"
 
 ## Torneo actual — CLAUSURA 2026
 
@@ -20,9 +21,9 @@ Los identificadores del torneo están **hardcodeados** y hay que actualizarlos c
 
 | Dato | Valor | Dónde |
 |---|---|---|
-| `tournamentId` | `566` (Elite B / Promocionales) | `lib/api/api_service.dart`, `.github/scripts/check_and_notify.js` |
-| `phaseId` | `1392` (CLAUSURA; la Apertura era `942`) | ídem + `.github/scripts/seed_fake_change.js` |
-| `groupId` (tabla) | `null` — todavía no publicada | `lib/api/api_service.dart`, `.github/scripts/check_and_notify.js` |
+| `tournamentId` | `566` (Elite B / Promocionales) | `lib/api/api_service.dart`, `.github/scripts/check_and_notify.js`, `.github/scripts/weball.js` |
+| `phaseId` | `1392` (CLAUSURA; la Apertura era `942`) | ídem + `.github/scripts/seed_fake_change.js`; la fase anterior (antecedentes de la previa) va en `PREV_PHASE_ID` de `weball.js` |
+| `groupId` (tabla) | `null` — todavía no publicada | `lib/api/api_service.dart`, `.github/scripts/check_and_notify.js`, `.github/scripts/weball.js` |
 | `inscriptionId` | `2129` (Estrella de Boedo) | ídem |
 | `teamId` | `1464` | ídem |
 | `categoryId` | `10` / `11` / `12` / `99` = 2016 / 2017 / 2018 / 2019 | `lib/models/category_config.dart` |
@@ -72,6 +73,23 @@ En CI, `.github/workflows/deploy.yml` publica `dev` → canal preview y `master`
 
 `.github/workflows/push_notifications.yml` corre `check_and_notify.js` cada hora: compara la API
 contra el snapshot en Firestore (`app_state/weball_snapshot`) y manda FCM a los tokens registrados.
+
+## Previa del próximo partido (IA)
+
+El mismo workflow corre después `generate_previews.js`: cuando el próximo partido de la categoría
+2016 pasa a "Programado" (fecha, hora y sede confirmadas), arma los datos (sede, clima si faltan 3
+días o menos, tabla, racha, último resultado propio y del rival, antecedentes), le pide la previa a
+Gemini vía Genkit y la guarda en Firestore (`ai_previews/{matchId}_{categoryId}`). La app la muestra
+debajo de "Próximo partido". Solo se regenera si cambian los datos o el pronóstico; la primera
+previa de cada partido manda un push. Para sumar categorías, ver `CATEGORIES` en el script.
+
+- Usa el **tier gratuito** de la Gemini Developer API: el secret `GEMINI_API_KEY` sale de
+  [Google AI Studio](https://aistudio.google.com/apikey) con el proyecto `edb-estrella`. Sin el
+  secret, el paso no hace nada. En el tier gratuito Google puede usar los datos enviados para
+  mejorar sus productos; por eso solo se mandan datos de equipos, nunca nombres de jugadores.
+- Modelo: `gemini-3.5-flash` por defecto (variable `GEMINI_MODEL` para cambiarlo).
+- Prueba local sin escribir nada: `node generate_previews.js --dry-run` (con `GEMINI_API_KEY`
+  definida también imprime el texto generado).
 
 ## Releases
 
