@@ -14,6 +14,7 @@ Producción: https://edb-estrella.web.app
 - **Galería por partido** — fotos y videos (carga y borrado restringidos a admin)
 - **Notificaciones push** — alertas ante cambios de horario, resultados, posición o plantel
 - **Previa con IA** — texto del próximo partido generado con Gemini, con botón "Cómo llegar"
+- **Asistente con IA** — chat (botón "Preguntar") sobre partidos, resultados, tabla, plantel y reglamento
 
 ## Torneo actual — CLAUSURA 2026
 
@@ -90,6 +91,22 @@ previa de cada partido manda un push. Para sumar categorías, ver `CATEGORIES` e
 - Modelo: `gemini-3.5-flash` por defecto (variable `GEMINI_MODEL` para cambiarlo).
 - Prueba local sin escribir nada: `node generate_previews.js --dry-run` (con `GEMINI_API_KEY`
   definida también imprime el texto generado).
+
+## Asistente (IA)
+
+El botón "Preguntar" abre un chat que responde con Gemini vía **Firebase AI Logic** (Gemini
+Developer API, tier gratuito, plan Spark). El contexto son los datos ya cargados en la pantalla
+(fixture, resultados, goleadores, tabla, plantel, próximo partido y previa) más el reglamento en
+texto (`assets/reglamento/reglamento_2026.txt`, extraído del PDF de la misma carpeta; si cambia el
+reglamento hay que regenerarlo con `pdftotext -layout`).
+
+- Requiere **App Check con Fraud Defense** (ex reCAPTCHA Enterprise, invisible, cuota gratuita de
+  10.000 verificaciones por mes): la clave está en `lib/services/ai_config.dart` y se administra en
+  Google Cloud → Seguridad → Fraud Defense, donde se configuran los dominios habilitados (prod,
+  `firebaseapp.com` y el canal dev). En `localhost` se usa un token de debug.
+- **No aplicar App Check a Firestore ni a Authentication** sin antes probarlo: solo está pensado
+  para AI Logic.
+- Modelo y límite de preguntas por conversación: `lib/services/ai_config.dart`.
 
 ## Releases
 

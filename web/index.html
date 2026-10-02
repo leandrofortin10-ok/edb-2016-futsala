@@ -38,7 +38,14 @@
     video::-webkit-media-controls-panel { width: calc(100% + 30px); }
     video::-internal-media-controls-download-button { display: none !important; }
     video::--webkit-media-controls-download-button { display: none !important; }
+    /* Ícono de reCAPTCHA (App Check) oculto: el aviso de Google se muestra en el asistente */
+    .grecaptcha-badge { visibility: hidden; }
   </style>
+  <script>
+    // App Check en desarrollo local: usa un token de debug que se registra en
+    // la consola de Firebase (App Check → Administrar tokens de depuración).
+    if (location.hostname === 'localhost') self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+  </script>
   <script>
     // Bloquear menú contextual en videos para evitar "Guardar video como..."
     document.addEventListener('contextmenu', function(e) {

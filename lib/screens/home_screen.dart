@@ -8,6 +8,7 @@ import '../api/api_service.dart';
 import '../models/category_config.dart';
 import '../models/match_preview.dart';
 import '../models/models.dart';
+import '../services/assistant_context.dart';
 import '../services/background_sync.dart';
 import '../services/debug_overrides.dart';
 import '../services/notifications.dart';
@@ -16,6 +17,7 @@ import '../services/weather_service.dart';
 import '../utils/birthdays.dart';
 import '../utils/team_logos.dart';
 import '../widgets/team_logo.dart';
+import 'assistant_screen.dart';
 import 'debug_screen.dart';
 import 'match_detail_screen.dart';
 
@@ -60,6 +62,8 @@ class _HomeScreenState extends State<HomeScreen> {
   // partido o la categoría para no resuscribirse en cada rebuild.
   String? _previewKey;
   Stream<MatchPreview?>? _previewStream;
+  // Última previa mostrada: se suma al contexto del asistente.
+  MatchPreview? _latestPreview;
 
   @override
   void initState() {
@@ -195,10 +199,42 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _openAssistant() {
+    final context_ = buildAssistantContext(
+      category:           _selectedCategory,
+      myInscriptionId:    _myInscriptionId,
+      matches:            _matches,
+      allMatches:         _allMatches,
+      standings:          _standings,
+      standingsPublished: ApiService.standingsPublished,
+      players:            _players,
+      matchDetails:       _matchDetails,
+      nextMatch:          _nextMatch(),
+      weather:            _weather,
+      preview:            _latestPreview,
+    );
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => AssistantScreen(
+        dataContext: context_,
+        categoryLabel: _selectedCategory.label,
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _kBg,
+      floatingActionButton: _loading || _error != null
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _openAssistant,
+              backgroundColor: _kBlue,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text('Preguntar'),
+            ),
       body: SafeArea(
         child: Column(
           children: [
@@ -369,7 +405,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBodyMobile() {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       cacheExtent: 2000,
       children: [
         _buildBannerImage(),
@@ -396,7 +432,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBodyDesktop() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(vertical: 32),
+      padding: const EdgeInsets.fromLTRB(0, 32, 0, 96),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1100),
@@ -563,11 +599,13 @@ class _HomeScreenState extends State<HomeScreen> {
     if (key != _previewKey) {
       _previewKey = key;
       _previewStream = PreviewService.watchPreview(next.id, _selectedCategory.categoryId);
+      _latestPreview = null;
     }
     return StreamBuilder<MatchPreview?>(
       stream: _previewStream,
       builder: (context, snapshot) {
         final preview = snapshot.data;
+        _latestPreview = preview;
         if (preview == null) return const SizedBox.shrink();
         return Padding(
           padding: const EdgeInsets.only(top: 12),
