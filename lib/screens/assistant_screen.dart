@@ -246,7 +246,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: 4,
         children: [
-          const Text('Respuestas generadas con IA; pueden tener errores. Protegido por reCAPTCHA de Google:',
+          const Text('Respuestas generadas con IA; pueden tener errores. No escribas datos personales. Protegido por reCAPTCHA de Google:',
               style: TextStyle(color: _kMuted, fontSize: 10)),
           link('Privacidad', 'https://policies.google.com/privacy'),
           const Text('·', style: TextStyle(color: _kMuted, fontSize: 10)),
