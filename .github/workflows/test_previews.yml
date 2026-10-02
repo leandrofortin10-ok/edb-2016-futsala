@@ -20,6 +20,11 @@ on:
         required: true
         default: true
         type: boolean
+      simulate_unconfirmed:
+        description: 'Simular que el próximo partido no está confirmado (borra la previa)'
+        required: true
+        default: false
+        type: boolean
 
 jobs:
   generate:
@@ -43,5 +48,6 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TARGET_ENV: ${{ github.event.inputs.env }}
           FORCE_PREVIEW: ${{ github.event.inputs.force }}
+          SIMULATE_UNCONFIRMED: ${{ github.event.inputs.simulate_unconfirmed }}
         run: node generate_previews.js
         working-directory: .github/scripts

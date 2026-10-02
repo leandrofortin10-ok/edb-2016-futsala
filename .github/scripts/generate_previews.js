@@ -7,13 +7,16 @@
 //   trae fecha, hora y sede confirmadas.
 // - Se regenera si cambian los datos (rival, fecha, sede, tabla, resultados)
 //   o si el pronóstico del clima cambia de forma apreciable.
+// - Si el partido deja de estar confirmado (suspendido, sin fecha), se borra su
+//   previa y la tarjeta desaparece de la app.
 // - La primera previa de cada partido manda un push.
 //
 // Requiere: FIREBASE_SERVICE_ACCOUNT y GEMINI_API_KEY (sin la key no hace nada).
 // Prueba local sin Firestore ni push: node generate_previews.js --dry-run
 // (con GEMINI_API_KEY definida también genera el texto y lo imprime).
-// FORCE_PREVIEW=true regenera y vuelve a avisar aunque la previa no haya
-// cambiado (lo usa el workflow manual test_previews.yml).
+// Solo para pruebas (workflow manual test_previews.yml):
+// - FORCE_PREVIEW=true regenera y vuelve a avisar aunque no haya cambios.
+// - SIMULATE_UNCONFIRMED=true trata al próximo partido como no confirmado.
 
 const crypto = require('crypto');
 const admin = require('firebase-admin');
@@ -28,6 +31,7 @@ const { sendNotifications } = require('./fcm');
 const MODEL   = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 const DRY_RUN = process.argv.includes('--dry-run');
 const FORCE   = process.env.FORCE_PREVIEW === 'true';
+const SIMULATE_UNCONFIRMED = process.env.SIMULATE_UNCONFIRMED === 'true';
 const TZ      = 'America/Argentina/Buenos_Aires';
 
 // Solo la categoría principal. Para sumar otras: { year: 2017, id: 11 },
@@ -260,6 +264,8 @@ async function buildFacts(category, ctx) {
   const next = findNextMatch(ours, ctx.today);
   if (!next) return { skip: 'sin próximo partido con fecha confirmada' };
 
+  if (SIMULATE_UNCONFIRMED) return { skip: `${next.fechaLabel} simulado como no confirmado` };
+
   const detail = await fetchJson(`${BASE}/matches/${next.tmId}`);
   if (detail.status?.name !== 'Programado') {
     return { skip: `${next.fechaLabel} en estado "${detail.status?.name}"` };
@@ -316,6 +322,19 @@ async function buildFacts(category, ctx) {
   };
 }
 
+// Borra las previas de la categoría salvo la del partido vigente (keepId).
+// Cubre partidos suspendidos, desconfirmados o que dejaron de ser el próximo.
+async function removeStalePreviews(db, categoryId, keepId) {
+  if (!db) return;
+  const snap = await db.collection('ai_previews').where('categoryId', '==', categoryId).get();
+  const stale = snap.docs.filter((d) => d.id !== keepId);
+  if (stale.length === 0) return;
+  const batch = db.batch();
+  for (const d of stale) batch.delete(d.ref);
+  await batch.commit();
+  console.log(`  Borrada(s) ${stale.length} previa(s) que ya no corresponden.`);
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -351,12 +370,14 @@ async function main() {
       const built = await buildFacts(category, ctx);
       if (built.skip) {
         console.log(`${tag} Sin previa: ${built.skip}.`);
+        await removeStalePreviews(db, category.id, null);
         continue;
       }
       const { next, facts, inputHash, weather, mapsUrl } = built;
       const docRef = db?.collection('ai_previews').doc(`${next.id}_${category.id}`);
       const prev = docRef ? await docRef.get() : null;
       const prevData = prev?.exists ? prev.data() : null;
+      await removeStalePreviews(db, category.id, docRef?.id);
 
       if (!FORCE && prevData && prevData.inputHash === inputHash
           && !weatherChanged(prevData.weather, weather)) {
