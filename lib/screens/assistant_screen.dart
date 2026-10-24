@@ -16,7 +16,7 @@ const _kRed     = Color(0xFFf85149);
 const _suggestions = [
   '¿Cuándo y dónde jugamos?',
   '¿Cómo está la tabla?',
-  '¿Quiénes son los goleadores?',
+  '¿Cuántos goles hicimos en el torneo?',
   '¿Cuánto dura cada tiempo?',
   '¿Qué pasa si un equipo llega tarde?',
 ];
@@ -141,7 +141,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
       padding: const EdgeInsets.all(20),
       children: [
         const Text(
-          'Preguntame sobre partidos, resultados, la tabla, el plantel, los goleadores o el reglamento del torneo.',
+          'Preguntame sobre partidos, resultados, la tabla, el plantel o el reglamento del torneo.',
           style: TextStyle(color: Colors.white, fontSize: 14, height: 1.5),
         ),
         const SizedBox(height: 16),

@@ -23,6 +23,9 @@ const _kGreen   = Color(0xFF3fb950);
 const _kRed     = Color(0xFFf85149);
 const _kYellow  = Color(0xFFd29922);
 const _kMyInscriptionId = 2129;
+// Goleadores y tarjetas por jugador ocultos: la app no muestra datos
+// individuales de los chicos (ver también la tabla de goleadores).
+const _showPlayerEvents = false;
 
 class MatchDetailScreen extends StatefulWidget {
   final Match match;
@@ -231,8 +234,8 @@ class _MatchDetailScreenState extends State<MatchDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildMatchInfoRow(d),
-          if (_hasGoals(d)) _buildGoalsSection(d),
-          if (_hasCards(d)) _buildCardsSection(d),
+          if (_showPlayerEvents && _hasGoals(d)) _buildGoalsSection(d),
+          if (_showPlayerEvents && _hasCards(d)) _buildCardsSection(d),
           if (m.spreadsheetPhotos.isNotEmpty) _buildSpreadsheetPhotos(),
         ],
       ),
