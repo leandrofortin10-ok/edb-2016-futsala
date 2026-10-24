@@ -37,6 +37,9 @@ jobs:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: edb-estrella
+          # Versión fija: desde 15.34 firebase-tools verifica las APIs habilitadas
+          # (serviceusage.services.get) y la cuenta de servicio no tiene ese permiso.
+          firebaseToolsVersion: '15.32.1'
           channelId: dev
           expires: 30d
 
@@ -48,4 +51,7 @@ jobs:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: edb-estrella
+          # Versión fija: desde 15.34 firebase-tools verifica las APIs habilitadas
+          # (serviceusage.services.get) y la cuenta de servicio no tiene ese permiso.
+          firebaseToolsVersion: '15.32.1'
           channelId: live
