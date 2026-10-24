@@ -1560,22 +1560,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ── Goleadores ───────────────────────────────────────────────────────────
+  /// Goleadores anonimizados: no se muestran nombres ni goles reales. Una fila
+  /// por jugador del plantel ("Jugador 1", "Jugador 2", ...) con 0 goles.
   List<MapEntry<String, int>> _computeScorers() {
-    final scorers = <String, int>{};
-    for (final m in _matches.where((m) => m.hasResult)) {
-      final detail = _matchDetails[m.tournamentMatchId];
-      if (detail == null) continue;
-      final isHome = m.localInscriptionId == _myInscriptionId;
-      final goals = isHome ? detail.goalsHome : detail.goalsAway;
-      for (final g in goals) {
-        if (g.playerName.isNotEmpty) {
-          scorers[g.playerName] = (scorers[g.playerName] ?? 0) + g.goals;
-        }
-      }
-    }
-    final sorted = scorers.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-    return sorted;
+    return List.generate(_players.length, (i) => MapEntry('Jugador ${i + 1}', 0));
   }
 
   Widget _buildScorers() {
@@ -1592,7 +1580,7 @@ class _HomeScreenState extends State<HomeScreen> {
           final idx = e.key;
           final scorer = e.value;
           final isLast = idx == scorers.length - 1;
-          final isTop = idx == 0;
+          final isTop = idx == 0 && scorer.value > 0;
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
